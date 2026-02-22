@@ -18,7 +18,14 @@ connectDB()
 
 const app = express();
 
-app.use(cors());
+// configure CORS to only allow the deployed frontend and include credentials
+app.use(
+  cors({
+    origin: "https://restowebtest.netlify.app",
+    credentials: true,
+  })
+);
+
 // allow larger payloads for base64 image upload
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
