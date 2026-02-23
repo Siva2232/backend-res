@@ -14,4 +14,8 @@ const productSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+// simple indexes to make common filters faster
+productSchema.index({ category: 1 });
+productSchema.index({ isAvailable: 1 });
+
 module.exports = mongoose.model("Product", productSchema);

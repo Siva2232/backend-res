@@ -20,12 +20,35 @@ const orderSchema = mongoose.Schema(
     status: {
       type: String,
       required: true,
-      enum: ["Pending", "Preparing", "Served", "Paid", "Cancelled"],
+      // expanded to match front-end statuses and future payment states
+      enum: [
+        "Pending",
+        "Preparing",
+        "Cooking",
+        "Ready",
+        "Served",
+        "Paid",
+        "Cancelled",
+      ],
       default: "Pending",
     },
     paymentMethod: { type: String, default: "Cash" },
+    // optional kitchen notes from customer
+    notes: { type: String },
+    // computed billing details (subtotal, cgst, sgst, grandTotal)
+    billDetails: {
+      subtotal: { type: Number },
+      cgst: { type: Number },
+      sgst: { type: Number },
+      grandTotal: { type: Number },
+    },
   },
   { timestamps: true }
 );
+
+// create useful indexes to speed up frequent lookups
+orderSchema.index({ table: 1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Order", orderSchema);
