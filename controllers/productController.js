@@ -4,7 +4,15 @@ const Product = require("../models/Product");
 // @route   GET /api/products
 // @access  Public
 const getProducts = async (req, res) => {
-  const products = await Product.find({});
+  // allow browser/client caching for a short period
+  res.set('Cache-Control', 'public, max-age=30');
+
+  let query = Product.find({}).lean();
+  if (req.query.limit) {
+    const limit = parseInt(req.query.limit, 10);
+    if (!isNaN(limit)) query = query.limit(limit);
+  }
+  const products = await query;
   res.json(products);
 };
 
@@ -12,6 +20,7 @@ const getProducts = async (req, res) => {
 // @route   GET /api/products/:id
 // @access  Public
 const getProductById = async (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
   const product = await Product.findById(req.params.id);
 
   if (product) {

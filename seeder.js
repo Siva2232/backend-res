@@ -48,6 +48,7 @@ const Product = require("./models/Product");
 const Banner = require("./models/Banner");
 const Offer = require("./models/Offer");
 const Order = require("./models/Order");
+const Bill = require("./models/Bill");
 const connectDB = require("./config/db");
 
 dotenv.config();
@@ -88,6 +89,7 @@ const offers = [
 
 const importData = async () => {
   try {
+    await Bill.deleteMany();
     await Order.deleteMany();
     await Product.deleteMany();
     await User.deleteMany();
@@ -116,6 +118,7 @@ const importData = async () => {
 
 const destroyData = async () => {
   try {
+    await Bill.deleteMany();
     await Order.deleteMany();
     await Product.deleteMany();
     await User.deleteMany();
