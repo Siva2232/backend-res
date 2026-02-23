@@ -22,8 +22,12 @@ const addBill = async (req, res) => {
 // @route   GET /api/bills
 // @access  Private/Admin
 const getBills = async (req, res) => {
-  const bills = await Bill.find({}).sort({ billedAt: -1 });
-  res.json(bills);
+  try {
+    const bills = await Bill.find({}).sort({ billedAt: -1 });
+    res.json(bills);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 module.exports = { addBill, getBills };

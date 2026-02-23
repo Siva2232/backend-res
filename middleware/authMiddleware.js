@@ -30,9 +30,10 @@ const protect = async (req, res, next) => {
 };
 
 const admin = (req, res, next) => {
-  if (req.user && (req.user.isAdmin === true || req.user.isAdmin === "true")) {
+  if (req.user && (req.user.isAdmin === true || String(req.user.isAdmin).toLowerCase() === "true")) {
     next();
   } else {
+    console.warn(`Admin access denied for user: ${req.user ? req.user.email : 'Unknown'}`);
     res.status(401).json({ message: "Not authorized as an admin" });
   }
 };

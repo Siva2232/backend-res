@@ -49,11 +49,19 @@ const Banner = require("./models/Banner");
 const Offer = require("./models/Offer");
 const Order = require("./models/Order");
 const Bill = require("./models/Bill");
+const Category = require("./models/Category");
 const connectDB = require("./config/db");
 
 dotenv.config();
 
 connectDB();
+
+const categories = [
+  { name: "Starters" },
+  { name: "Main Courses" },
+  { name: "Desserts" },
+  { name: "Beverages" },
+];
 
 const banners = [
   {
@@ -95,6 +103,10 @@ const importData = async () => {
     await User.deleteMany();
     await Banner.deleteMany();
     await Offer.deleteMany();
+    await Category.deleteMany();
+
+    await Category.insertMany(categories);
+    console.log("Categories Seeded!");
 
     // Add a default admin user
     const adminUser = await User.create({
