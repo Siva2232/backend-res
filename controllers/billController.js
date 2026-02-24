@@ -12,6 +12,9 @@ const addBill = async (req, res) => {
     }
     const bill = new Bill({ orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails });
     const created = await bill.save();
+    // emit socket so dashboard updates
+    const io = req.app.get('io');
+    if (io) io.emit('billCreated', created);
     res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ message: error.message });
