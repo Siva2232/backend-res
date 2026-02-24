@@ -44,7 +44,7 @@ const addOrderItems = async (req, res) => {
 
     // also persist a copy as a bill for invoicing / audit purposes
     try {
-      await Bill.create({
+      const newBill = await Bill.create({
         orderRef: createdOrder._id,
         table: createdOrder.table,
         items: createdOrder.items,
@@ -55,6 +55,10 @@ const addOrderItems = async (req, res) => {
         billDetails: createdOrder.billDetails,
         billedAt: createdOrder.createdAt,
       });
+      const io = req.app.get('io');
+      if (io && newBill) {
+        io.emit('billCreated', newBill);
+      }
     } catch (err) {
       console.error("Failed to create bill:", err);
       // we don't fail the request if bill creation fails
