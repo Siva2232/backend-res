@@ -21,6 +21,7 @@ const authUser = async (req, res) => {
       name: user.name,
       email: user.email,
       isAdmin: user.isAdmin,
+      isKitchen: user.isKitchen || false,
       token: generateToken(user._id),
     });
   } else {

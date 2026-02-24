@@ -116,6 +116,15 @@ const importData = async () => {
       isAdmin: true,
     });
 
+    // Add a default kitchen staff user
+    const kitchenUser = await User.create({
+      name: "Kitchen Staff",
+      email: "kitchen@demo.com",
+      password: "kitchen123",
+      isAdmin: false,
+      isKitchen: true,
+    });
+
     await Product.insertMany(products);
     await Banner.insertMany(banners);
     await Offer.insertMany(offers);
