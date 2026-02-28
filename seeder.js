@@ -123,6 +123,18 @@ const importData = async () => {
       password: "kitchen123",
       isAdmin: false,
       isKitchen: true,
+      salary: 15000,
+    });
+
+    // Add a default waiter user
+    const waiterUser = await User.create({
+      name: "Waiter",
+      email: "waiter@demo.com",
+      password: "waiter123",
+      isAdmin: false,
+      isKitchen: false,
+      isWaiter: true,
+      salary: 12000,
     });
 
     await Product.insertMany(products);

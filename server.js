@@ -13,12 +13,28 @@ const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
 
-// establish database connection and log when ready
-connectDB()
-  .then(() => console.log("MongoDB connection established from server.js"))
-  .catch((err) => console.error("MongoDB connection failed:", err));
-
+// create express app and HTTP server early
+// so we can reference `server` when starting after DB connection
 const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const PORT = process.env.PORT || 5000;
+
+// establish database connection and start server only when ready
+// this prevents incoming requests from hitting mongoose before
+// the connection is established (which can trigger buffering timeouts)
+connectDB()
+  .then(() => {
+    console.log("MongoDB connection established from server.js");
+    // start listening after DB is connected
+    server.listen(PORT, () =>
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
+    );
+  })
+  .catch((err) => {
+    console.error("MongoDB connection failed:", err);
+    process.exit(1);
+  });
 
 // configure CORS to allow both the deployed frontend and local development
 const allowedOrigins = [
@@ -50,29 +66,6 @@ app.use(
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
-// we will attach socket.io to the underlying HTTP server later
-
-app.get("/", (req, res) => {
-  res.send("API is running...");
-});
-
-app.use("/api/products", productRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/bills", billRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/banners", bannerRoutes);
-app.use("/api/offers", offerRoutes);
-app.use("/api/categories", categoryRoutes);
-
-app.use(notFound);
-app.use(errorHandler);
-
-const PORT = process.env.PORT || 5000;
-
-// use a raw http server so we can hook socket.io onto it
-const http = require('http');
-const server = http.createServer(app);
-
 // configure socket.io and make it available via app.get('io')
 const { Server } = require('socket.io');
 const io = new Server(server, {
@@ -103,7 +96,18 @@ io.on('connection', async (socket) => {
 // make the io instance retrievable from request handlers
 app.set('io', io);
 
-server.listen(PORT, () =>
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
-);
+app.get("/", (req, res) => {
+  res.send("API is running...");
+});
+
+app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/bills", billRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/banners", bannerRoutes);
+app.use("/api/offers", offerRoutes);
+app.use("/api/categories", categoryRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
 

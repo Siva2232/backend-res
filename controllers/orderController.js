@@ -1,5 +1,7 @@
 const Order = require("../models/Order");
 const Bill = require("../models/Bill");
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -19,7 +21,7 @@ const addOrderItems = async (req, res) => {
     res.status(400).json({ message: "No order items" });
     return;
   } else {
-    const order = new Order({
+    const orderData = {
       items: orderItems.map((x) => ({
         ...x,
         product: x._id,
@@ -32,7 +34,24 @@ const addOrderItems = async (req, res) => {
       billDetails,
       paymentMethod,
       status: status || "Pending",
-    });
+    };
+
+    // attach waiter from authenticated session if available
+    // the orders endpoint is public, so manually decode the token if present
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+      try {
+        const token = req.headers.authorization.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const authUser = await User.findById(decoded.id);
+        if (authUser && authUser.isWaiter) {
+          orderData.waiter = authUser._id;
+        }
+      } catch (err) {
+        // ignore invalid token; simply proceed without waiter
+      }
+    }
+
+    const order = new Order(orderData);
 
     const createdOrder = await order.save();
 
@@ -107,14 +126,19 @@ const updateOrderStatus = async (req, res) => {
 // @route   GET /api/orders
 // @access  Private/Admin
 const getOrders = async (req, res) => {
-  // allow an optional ?limit= parameter for pagination
-  let query = Order.find({}).sort({ createdAt: -1 }).lean();
-  if (req.query.limit) {
-    const limit = parseInt(req.query.limit, 10);
-    if (!isNaN(limit)) query = query.limit(limit);
+  try {
+    // allow an optional ?limit= parameter for pagination
+    let query = Order.find({}).sort({ createdAt: -1 }).lean();
+    if (req.query.limit) {
+      const limit = parseInt(req.query.limit, 10);
+      if (!isNaN(limit)) query = query.limit(limit);
+    }
+    const orders = await query;
+    res.json(orders);
+  } catch (error) {
+    console.error("getOrders error", error);
+    res.status(500).json({ message: "Server error getting orders" });
   }
-  const orders = await query;
-  res.json(orders);
 };
 
 // @desc    Get orders for a specific table
