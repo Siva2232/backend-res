@@ -18,6 +18,9 @@ const orderSchema = mongoose.Schema(
         qty: { type: Number, required: true },
         price: { type: Number, required: true },
         image: { type: String, required: true },
+        // Fields for "Add More Items" tracking
+        addedAt: { type: Date },
+        isNewItem: { type: Boolean, default: false },
       },
     ],
     totalAmount: { type: Number, required: true },
