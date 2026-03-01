@@ -46,7 +46,9 @@ const orderSchema = mongoose.Schema(
     },
     // which waiter took the order (optional)
     waiter: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    paymentMethod: { type: String, default: "Cash" },
+    paymentMethod: { type: String, default: "cod" }, // "cod" or "online"
+    paymentStatus: { type: String, default: "pending" }, // "pending" or "paid"
+    paymentId: { type: String }, // Stripe payment intent ID for online payments
     // optional kitchen notes from customer
     notes: { type: String },
     // computed billing details (subtotal, cgst, sgst, grandTotal)

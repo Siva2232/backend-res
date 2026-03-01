@@ -38,7 +38,9 @@ const billSchema = mongoose.Schema(
     ],
     totalAmount: { type: Number, required: true },
     status: { type: String, required: true },
-    paymentMethod: { type: String },
+    paymentMethod: { type: String, default: "cod" }, // "cod" or "online"
+    paymentStatus: { type: String, default: "pending" }, // "pending" or "paid"
+    paymentId: { type: String }, // Stripe payment intent ID for online payments
     notes: { type: String },
     billDetails: {
       subtotal: { type: Number },

@@ -10,6 +10,7 @@ const bannerRoutes = require("./routes/bannerRoutes");
 const offerRoutes = require("./routes/offerRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -109,6 +110,7 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/payment", paymentRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
