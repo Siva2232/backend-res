@@ -87,6 +87,13 @@ const addOrderItems = async (req, res) => {
     if (io) {
       io.emit("orderUpdated", updatedOrder);
       if (bill) io.emit("billUpdated", bill);
+      // Emit special event for "Add More Items" notification in admin panel
+      io.emit("orderItemsAdded", {
+        order: updatedOrder,
+        newItems: newItems,
+        table: updatedOrder.table,
+        addedAt: new Date().toISOString(),
+      });
     }
 
     return res.status(200).json(updatedOrder);
