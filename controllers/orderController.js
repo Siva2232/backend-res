@@ -38,11 +38,14 @@ const addOrderItems = async (req, res) => {
   }
 
   if (existingOrder) {
-    // Merge new items into existing order
+    // Merge new items into existing order - mark them with addedAt timestamp
+    const addedAt = new Date().toISOString();
     const newItems = orderItems.map((x) => ({
       ...x,
       product: x._id,
       _id: undefined,
+      addedAt: addedAt, // Mark as newly added for kitchen visibility
+      isNewItem: true,
     }));
 
     existingOrder.items = [...existingOrder.items, ...newItems];
