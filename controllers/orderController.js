@@ -46,7 +46,21 @@ const addOrderItems = async (req, res) => {
     }));
 
     existingOrder.items = [...existingOrder.items, ...newItems];
-    existingOrder.totalAmount += totalAmount;
+    
+    // Recalculate totals from all items (existing + new)
+    const newSubtotal = existingOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const newCgst = newSubtotal * 0.025;
+    const newSgst = newSubtotal * 0.025;
+    const newGrandTotal = newSubtotal + newCgst + newSgst;
+    
+    existingOrder.totalAmount = newGrandTotal;
+    existingOrder.billDetails = {
+      subtotal: newSubtotal,
+      cgst: newCgst,
+      sgst: newSgst,
+      grandTotal: newGrandTotal,
+    };
+    
     if (notes) existingOrder.notes = (existingOrder.notes ? existingOrder.notes + " | " : "") + notes;
     
     // Update customer info if provided and was missing
@@ -56,11 +70,12 @@ const addOrderItems = async (req, res) => {
 
     const updatedOrder = await existingOrder.save();
 
-    // Update the corresponding bill
+    // Update the corresponding bill with recalculated totals
     const bill = await Bill.findOne({ orderRef: updatedOrder._id });
     if (bill) {
       bill.items = updatedOrder.items;
       bill.totalAmount = updatedOrder.totalAmount;
+      bill.billDetails = updatedOrder.billDetails;
       bill.customerName = updatedOrder.customerName;
       bill.customerAddress = updatedOrder.customerAddress;
       bill.deliveryTime = updatedOrder.deliveryTime;
