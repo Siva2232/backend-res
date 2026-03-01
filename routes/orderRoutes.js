@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   addOrderItems,
+  addManualOrder,
   getOrderById,
   updateOrderStatus,
   getOrders,
@@ -16,6 +17,9 @@ router
   .route("/")
   .post(addOrderItems)
   .get(protect, adminOrKitchen, getOrders);
+
+// dedicated manual-order endpoint, requires auth
+router.post("/manual", protect, admin, addManualOrder);
 router.route("/table/:tableNum").get(getTableOrders);
 router.route("/:id").get(getOrderById);
 router.route("/:id/status").put(protect, admin, updateOrderStatus);
