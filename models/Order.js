@@ -3,6 +3,10 @@ const mongoose = require("mongoose");
 const orderSchema = mongoose.Schema(
   {
     table: { type: String, required: true },
+    // optional customer information used for delivery / manual orders
+    customerName: { type: String },
+    customerAddress: { type: String },
+    deliveryTime: { type: String }, // estimated delivery time for customers
     items: [
       {
         product: {

@@ -15,76 +15,132 @@ const addOrderItems = async (req, res) => {
     billDetails,
     paymentMethod,
     status,
+    customerName,
+    customerAddress,
+    deliveryTime,
+    existingOrderId, // New field to specifically target an order for merging
   } = req.body;
 
   if (orderItems && orderItems.length === 0) {
     res.status(400).json({ message: "No order items" });
     return;
-  } else {
-    const orderData = {
-      items: orderItems.map((x) => ({
-        ...x,
-        product: x._id,
-        _id: undefined,
-      })),
-      table,
-      totalAmount,
-      // optional fields
-      notes,
-      billDetails,
-      paymentMethod,
-      status: status || "Pending",
-    };
+  }
 
-    // attach waiter from authenticated session if available
-    // the orders endpoint is public, so manually decode the token if present
-    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
-      try {
-        const token = req.headers.authorization.split(" ")[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const authUser = await User.findById(decoded.id);
-        if (authUser && authUser.isWaiter) {
-          orderData.waiter = authUser._id;
-        }
-      } catch (err) {
-        // ignore invalid token; simply proceed without waiter
-      }
+  const tableNo = table && table.trim() ? table : "TAKEAWAY";
+
+  // ONLY MERGE if existingOrderId is provided and it is still ACTIVE
+  let existingOrder = null;
+  if (existingOrderId) {
+    existingOrder = await Order.findOne({
+      _id: existingOrderId,
+      status: { $in: ["Pending", "Preparing", "Ready"] },
+    });
+  }
+
+  if (existingOrder) {
+    // Merge new items into existing order
+    const newItems = orderItems.map((x) => ({
+      ...x,
+      product: x._id,
+      _id: undefined,
+    }));
+
+    existingOrder.items = [...existingOrder.items, ...newItems];
+    existingOrder.totalAmount += totalAmount;
+    if (notes) existingOrder.notes = (existingOrder.notes ? existingOrder.notes + " | " : "") + notes;
+    
+    // Update customer info if provided and was missing
+    if (customerName) existingOrder.customerName = customerName;
+    if (customerAddress) existingOrder.customerAddress = customerAddress;
+    if (deliveryTime) existingOrder.deliveryTime = deliveryTime;
+
+    const updatedOrder = await existingOrder.save();
+
+    // Update the corresponding bill
+    const bill = await Bill.findOne({ orderRef: updatedOrder._id });
+    if (bill) {
+      bill.items = updatedOrder.items;
+      bill.totalAmount = updatedOrder.totalAmount;
+      bill.customerName = updatedOrder.customerName;
+      bill.customerAddress = updatedOrder.customerAddress;
+      bill.deliveryTime = updatedOrder.deliveryTime;
+      bill.notes = updatedOrder.notes;
+      await bill.save();
     }
 
-    const order = new Order(orderData);
-
-    const createdOrder = await order.save();
-
-    // notify any connected clients that a new order has arrived
-    const io = req.app.get('io');
+    const io = req.app.get("io");
     if (io) {
-      io.emit('orderCreated', createdOrder);
+      io.emit("orderUpdated", updatedOrder);
+      if (bill) io.emit("billUpdated", bill);
     }
 
-    // also persist a copy as a bill for invoicing / audit purposes
+    return res.status(200).json(updatedOrder);
+  }
+
+  // If no existing active order, create a new one
+  const orderData = {
+    items: orderItems.map((x) => ({
+      ...x,
+      product: x._id,
+      _id: undefined,
+    })),
+    table: tableNo,
+    totalAmount,
+    notes,
+    billDetails,
+    paymentMethod,
+    status: status || "Pending",
+    customerName,
+    customerAddress,
+    deliveryTime,
+  };
+
+  // attach waiter from authenticated session if available
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     try {
-      const newBill = await Bill.create({
-        orderRef: createdOrder._id,
-        table: createdOrder.table,
-        items: createdOrder.items,
-        totalAmount: createdOrder.totalAmount,
-        status: createdOrder.status,
-        paymentMethod: createdOrder.paymentMethod,
-        notes: createdOrder.notes,
-        billDetails: createdOrder.billDetails,
-        billedAt: createdOrder.createdAt,
-      });
-      const io = req.app.get('io');
-      if (io && newBill) {
-        io.emit('billCreated', newBill);
+      const token = req.headers.authorization.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const authUser = await User.findById(decoded.id);
+      if (authUser && authUser.isWaiter) {
+        orderData.waiter = authUser._id;
       }
     } catch (err) {
-      console.error("Failed to create bill:", err);
-      // we don't fail the request if bill creation fails
+      // ignore invalid token
     }
-
-    res.status(201).json(createdOrder);
   }
+
+  const order = new Order(orderData);
+  const createdOrder = await order.save();
+
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("orderCreated", createdOrder);
+  }
+
+  // Create initial bill
+  try {
+    const newBill = await Bill.create({
+      orderRef: createdOrder._id,
+      table: createdOrder.table,
+      customerName: createdOrder.customerName,
+      customerAddress: createdOrder.customerAddress,
+      deliveryTime: createdOrder.deliveryTime,
+      items: createdOrder.items,
+      totalAmount: createdOrder.totalAmount,
+      status: createdOrder.status,
+      paymentMethod: createdOrder.paymentMethod,
+      notes: createdOrder.notes,
+      billDetails: createdOrder.billDetails,
+      billedAt: createdOrder.createdAt,
+    });
+    if (io && newBill) {
+      io.emit("billCreated", newBill);
+    }
+  } catch (err) {
+    console.error("Failed to create bill:", err);
+  }
+
+  res.status(201).json(createdOrder);
 };
 
 // @desc    Get order by ID
@@ -151,8 +207,20 @@ const getTableOrders = async (req, res) => {
   res.json(orders);
 };
 
+
+// wrapper for administrative/manual creation that enforces authentication
+// and allows additional validation if needed in future.
+const addManualOrder = async (req, res) => {
+  // ensure this route is only used by logged-in admins or waiters
+  // (middleware applied on route)
+  // we can reuse the addOrderItems logic directly as it already handles
+  // splitting on existingOrderId and building the order/bill.
+  return addOrderItems(req, res);
+};
+
 module.exports = {
   addOrderItems,
+  addManualOrder,
   getOrderById,
   updateOrderStatus,
   getOrders,

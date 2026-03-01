@@ -14,6 +14,9 @@ const billSchema = mongoose.Schema(
       required: true,
     },
     table: { type: String, required: true },
+    customerName: { type: String },
+    customerAddress: { type: String },
+    deliveryTime: { type: String }, // optional estimated delivery time
     items: [
       {
         product: {
