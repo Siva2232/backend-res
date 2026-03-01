@@ -14,6 +14,8 @@ const billSchema = mongoose.Schema(
       required: true,
     },
     table: { type: String, required: true },
+    // flag indicating if this dine-in bill also includes takeaway items
+    hasTakeaway: { type: Boolean, default: false },
     customerName: { type: String },
     customerAddress: { type: String },
     deliveryTime: { type: String }, // optional estimated delivery time
@@ -30,6 +32,8 @@ const billSchema = mongoose.Schema(
         // Fields for "Add More Items" tracking
         addedAt: { type: Date },
         isNewItem: { type: Boolean, default: false },
+        // Flag for items that are takeaway within a dine-in order
+        isTakeaway: { type: Boolean, default: false },
       },
     ],
     totalAmount: { type: Number, required: true },
