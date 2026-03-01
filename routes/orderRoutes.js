@@ -8,7 +8,7 @@ const {
   getOrders,
   getTableOrders,
 } = require("../controllers/orderController");
-const { protect, admin, adminOrKitchen } = require("../middleware/authMiddleware");
+const { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter } = require("../middleware/authMiddleware");
 
 // orders list is now available to kitchen users as well; unauthorized
 // clients will receive 403 instead of 401 (which previously caused the
@@ -22,6 +22,6 @@ router
 router.post("/manual", protect, admin, addManualOrder);
 router.route("/table/:tableNum").get(getTableOrders);
 router.route("/:id").get(getOrderById);
-router.route("/:id/status").put(protect, admin, updateOrderStatus);
+router.route("/:id/status").put(protect, adminOrKitchenOrWaiter, updateOrderStatus);
 
 module.exports = router;
