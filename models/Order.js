@@ -3,6 +3,9 @@ const mongoose = require("mongoose");
 const orderSchema = mongoose.Schema(
   {
     table: { type: String, required: true },
+    // flag indicating if this dine-in order also includes takeaway items
+    // when true, the single bill covers both dine-in and takeaway portions
+    hasTakeaway: { type: Boolean, default: false },
     // optional customer information used for delivery / manual orders
     customerName: { type: String },
     customerAddress: { type: String },
@@ -21,6 +24,8 @@ const orderSchema = mongoose.Schema(
         // Fields for "Add More Items" tracking
         addedAt: { type: Date },
         isNewItem: { type: Boolean, default: false },
+        // Flag for items that are takeaway within a dine-in order
+        isTakeaway: { type: Boolean, default: false },
       },
     ],
     totalAmount: { type: Number, required: true },

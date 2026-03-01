@@ -19,6 +19,7 @@ const addOrderItems = async (req, res) => {
     customerAddress,
     deliveryTime,
     existingOrderId, // New field to specifically target an order for merging
+    hasTakeaway, // Flag indicating dine-in order also has takeaway items
   } = req.body;
 
   if (orderItems && orderItems.length === 0) {
@@ -70,6 +71,8 @@ const addOrderItems = async (req, res) => {
     if (customerName) existingOrder.customerName = customerName;
     if (customerAddress) existingOrder.customerAddress = customerAddress;
     if (deliveryTime) existingOrder.deliveryTime = deliveryTime;
+    // Update hasTakeaway flag if provided (can upgrade dine-in to dine-in+takeaway)
+    if (hasTakeaway) existingOrder.hasTakeaway = true;
 
     const updatedOrder = await existingOrder.save();
 
@@ -82,6 +85,7 @@ const addOrderItems = async (req, res) => {
       bill.customerName = updatedOrder.customerName;
       bill.customerAddress = updatedOrder.customerAddress;
       bill.deliveryTime = updatedOrder.deliveryTime;
+      bill.hasTakeaway = updatedOrder.hasTakeaway;
       bill.notes = updatedOrder.notes;
       await bill.save();
     }
@@ -118,6 +122,7 @@ const addOrderItems = async (req, res) => {
     customerName,
     customerAddress,
     deliveryTime,
+    hasTakeaway: hasTakeaway || false, // Include takeaway flag for dine-in orders
   };
 
   // attach waiter from authenticated session if available
@@ -147,6 +152,7 @@ const addOrderItems = async (req, res) => {
     const newBill = await Bill.create({
       orderRef: createdOrder._id,
       table: createdOrder.table,
+      hasTakeaway: createdOrder.hasTakeaway, // Include takeaway flag in bill
       customerName: createdOrder.customerName,
       customerAddress: createdOrder.customerAddress,
       deliveryTime: createdOrder.deliveryTime,
