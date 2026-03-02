@@ -97,6 +97,23 @@ const addOrderItems = async (req, res) => {
     // Update hasTakeaway flag if provided (can upgrade dine-in to dine-in+takeaway)
     if (hasTakeaway) existingOrder.hasTakeaway = true;
 
+    // Track payment session for this specific batch
+    const currentBatchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const batchGrandTotal = currentBatchTotal * 1.05; // Incl 5% GST for this batch
+    
+    if (!existingOrder.paymentSessions) existingOrder.paymentSessions = [];
+    
+    // Normalize status (ensure "paid" instead of "Paid" or "PAID" etc)
+    const normalizedStatus = (paymentStatus || "pending").toLowerCase();
+    
+    existingOrder.paymentSessions.push({
+      method: paymentMethod || "cod",
+      status: normalizedStatus,
+      amount: batchGrandTotal,
+      id: paymentId || null,
+      addedAt: new Date()
+    });
+
     const updatedOrder = await existingOrder.save();
 
     // Update the corresponding bill with recalculated totals
@@ -110,6 +127,20 @@ const addOrderItems = async (req, res) => {
       bill.deliveryTime = updatedOrder.deliveryTime;
       bill.hasTakeaway = updatedOrder.hasTakeaway;
       bill.notes = updatedOrder.notes;
+      bill.paymentSessions = updatedOrder.paymentSessions;
+      
+      // Overall payment status logic for the whole bill
+      const allPaid = bill.paymentSessions.every(s => s.status === "paid");
+      const anyPaid = bill.paymentSessions.some(s => s.status === "paid");
+      
+      if (allPaid) {
+        bill.paymentStatus = "paid";
+      } else if (anyPaid) {
+        bill.paymentStatus = "partially_paid";
+      } else {
+        bill.paymentStatus = "pending";
+      }
+      
       await bill.save();
     }
 
@@ -179,6 +210,15 @@ const addOrderItems = async (req, res) => {
     customerAddress,
     deliveryTime,
     hasTakeaway: hasTakeaway || false, // Include takeaway flag for dine-in orders
+    paymentSessions: [
+      {
+        method: paymentMethod || "cod",
+        status: (paymentStatus || "pending").toLowerCase(),
+        amount: totalAmount,
+        id: paymentId || null,
+        addedAt: new Date(),
+      },
+    ],
   };
 
   // attach waiter from authenticated session if available
@@ -218,6 +258,7 @@ const addOrderItems = async (req, res) => {
       paymentMethod: createdOrder.paymentMethod,
       paymentStatus: createdOrder.paymentStatus,
       paymentId: createdOrder.paymentId,
+      paymentSessions: createdOrder.paymentSessions,
       notes: createdOrder.notes,
       billDetails: createdOrder.billDetails,
       billedAt: createdOrder.createdAt,

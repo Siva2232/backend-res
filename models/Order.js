@@ -49,6 +49,15 @@ const orderSchema = mongoose.Schema(
     paymentMethod: { type: String, default: "cod" }, // "cod" or "online"
     paymentStatus: { type: String, default: "pending" }, // "pending" or "paid"
     paymentId: { type: String }, // Stripe payment intent ID for online payments
+    paymentSessions: [
+      {
+        method: { type: String },
+        status: { type: String },
+        amount: { type: Number },
+        id: { type: String },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
     // optional kitchen notes from customer
     notes: { type: String },
     // computed billing details (subtotal, cgst, sgst, grandTotal)
