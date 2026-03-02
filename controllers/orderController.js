@@ -1,5 +1,6 @@
 const Order = require("../models/Order");
 const Bill = require("../models/Bill");
+const KitchenBill = require("../models/KitchenBill");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
@@ -38,6 +39,26 @@ const addOrderItems = async (req, res) => {
       _id: existingOrderId,
       status: { $in: ["Pending", "Preparing", "Ready"] },
     });
+  }
+
+  // automatic merge heuristics when no explicit id given
+  if (!existingOrder) {
+    // if customer provided, try by name first (useful for takeaways)
+    if (customerName && customerName.trim()) {
+      existingOrder = await Order.findOne({
+        customerName: customerName.trim(),
+        status: { $in: ["Pending", "Preparing", "Ready"] },
+      }).sort({ createdAt: -1 }); // Get the latest active order for this name
+    }
+    
+    // if still no match and a specific table (non-takeaway) is given,
+    // merge into that table's active order
+    if (!existingOrder && tableNo && tableNo !== "TAKEAWAY") {
+      existingOrder = await Order.findOne({
+        table: tableNo,
+        status: { $in: ["Pending", "Preparing", "Ready"] },
+      }).sort({ createdAt: -1 });
+    }
   }
 
   if (existingOrder) {
@@ -90,6 +111,37 @@ const addOrderItems = async (req, res) => {
       bill.hasTakeaway = updatedOrder.hasTakeaway;
       bill.notes = updatedOrder.notes;
       await bill.save();
+    }
+
+    // Create a NEW KitchenBill for this batch of items (separate ticket for kitchen/waiter)
+    try {
+      // Find the highest existing batch number for this order
+      const existingKitchenBills = await KitchenBill.find({ orderRef: updatedOrder._id }).sort({ batchNumber: -1 });
+      const nextBatchNumber = existingKitchenBills.length > 0 ? existingKitchenBills[0].batchNumber + 1 : 2;
+      
+      // Calculate batch total for just the new items
+      const batchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      
+      const kitchenBill = await KitchenBill.create({
+        orderRef: updatedOrder._id,
+        batchNumber: nextBatchNumber,
+        table: updatedOrder.table,
+        hasTakeaway: updatedOrder.hasTakeaway,
+        customerName: updatedOrder.customerName,
+        customerAddress: updatedOrder.customerAddress,
+        deliveryTime: updatedOrder.deliveryTime,
+        items: newItems,
+        batchTotal: batchTotal,
+        status: "Pending",
+        notes: notes || "",
+      });
+      
+      const io = req.app.get("io");
+      if (io && kitchenBill) {
+        io.emit("kitchenBillCreated", kitchenBill);
+      }
+    } catch (err) {
+      console.error("Failed to create kitchen bill for added items:", err);
     }
 
     const io = req.app.get("io");
@@ -175,6 +227,29 @@ const addOrderItems = async (req, res) => {
     }
   } catch (err) {
     console.error("Failed to create bill:", err);
+  }
+
+  // Create initial KitchenBill (batch 1) for kitchen/waiter view
+  try {
+    const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const kitchenBill = await KitchenBill.create({
+      orderRef: createdOrder._id,
+      batchNumber: 1,
+      table: createdOrder.table,
+      hasTakeaway: createdOrder.hasTakeaway,
+      customerName: createdOrder.customerName,
+      customerAddress: createdOrder.customerAddress,
+      deliveryTime: createdOrder.deliveryTime,
+      items: createdOrder.items,
+      batchTotal: batchTotal,
+      status: createdOrder.status,
+      notes: createdOrder.notes,
+    });
+    if (io && kitchenBill) {
+      io.emit("kitchenBillCreated", kitchenBill);
+    }
+  } catch (err) {
+    console.error("Failed to create kitchen bill:", err);
   }
 
   res.status(201).json(createdOrder);
