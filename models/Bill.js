@@ -41,6 +41,15 @@ const billSchema = mongoose.Schema(
     paymentMethod: { type: String, default: "cod" }, // "cod" or "online"
     paymentStatus: { type: String, default: "pending" }, // "pending" or "paid"
     paymentId: { type: String }, // Stripe payment intent ID for online payments
+    paymentSessions: [
+      {
+        method: { type: String }, // "online" or "cod"
+        status: { type: String }, // "paid" or "pending"
+        amount: { type: Number },
+        id: { type: String }, // stripe intent id
+        addedAt: { type: Date, default: Date.now },
+      }
+    ],
     notes: { type: String },
     billDetails: {
       subtotal: { type: Number },
