@@ -337,7 +337,13 @@ const updateOrderStatus = async (req, res) => {
 const getOrders = async (req, res) => {
   try {
     // allow an optional ?limit= parameter for pagination
-    let query = Order.find({}).sort({ createdAt: -1 }).lean();
+    let filter = {};
+    if (req.query.status) {
+      const statuses = req.query.status.split(",");
+      filter.status = { $in: statuses };
+    }
+    
+    let query = Order.find(filter).sort({ createdAt: -1 }).lean();
     if (req.query.limit) {
       const limit = parseInt(req.query.limit, 10);
       if (!isNaN(limit)) query = query.limit(limit);

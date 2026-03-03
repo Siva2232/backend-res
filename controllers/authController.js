@@ -168,8 +168,14 @@ const updateUser = async (req, res) => {
       const newSal = Number(salary);
       if (newSal !== user.salary || (typeof advance !== "undefined" && Number(advance) !== user.advance)) {
         user.salaryHistory = user.salaryHistory || [];
-        // snapshot for salary/advance change
-        const snapshot = { amount: newSal, advance: user.advance, paid: 0, date: new Date() };
+        // snapshot for salary/advance change, include note if provided
+        const snapshot = { 
+          amount: newSal, 
+          advance: user.advance, 
+          paid: 0, 
+          note: req.body.note || "",
+          date: new Date() 
+        };
         user.salaryHistory.push(snapshot);
       }
       user.salary = newSal;
@@ -179,7 +185,14 @@ const updateUser = async (req, res) => {
 
     if (req.body.salaryHistory) {
       // completely replace history (this covers delete operations)
-      user.salaryHistory = req.body.salaryHistory;
+      // ensure any missing note fields are defaulted
+      user.salaryHistory = (req.body.salaryHistory || []).map(h => ({
+        amount: h.amount,
+        advance: h.advance || 0,
+        paid: h.paid || 0,
+        note: h.note || "",
+        date: h.date || new Date()
+      }));
     }
 
     const updated = await user.save();
