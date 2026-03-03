@@ -10,4 +10,7 @@ router.post("/", addBill);
 const { adminOrKitchenOrWaiter } = require('../middleware/authMiddleware');
 router.get("/", protect, adminOrKitchenOrWaiter, getBills);
 
+// mark cash bill as paid (any staff can collect cash)
+router.put("/:id/pay", protect, adminOrKitchenOrWaiter, require('../controllers/billController').markBillPaid);
+
 module.exports = router;

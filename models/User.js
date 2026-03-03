@@ -16,6 +16,7 @@ const userSchema = mongoose.Schema(
         amount: { type: Number, required: true },
         advance: { type: Number, default: 0 },
         paid: { type: Number, default: 0 },
+        note: { type: String, default: "" },
         date: { type: Date, required: true, default: Date.now }
       }
     ],
