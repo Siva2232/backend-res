@@ -315,20 +315,44 @@ const getOrderById = async (req, res) => {
 const updateOrderStatus = async (req, res) => {
   const order = await Order.findById(req.params.id);
 
-  if (order) {
-    order.status = req.body.status || order.status;
-    const updatedOrder = await order.save();
-
-    // emit update event so frontends can react immediately
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('orderUpdated', updatedOrder);
-    }
-
-    res.json(updatedOrder);
-  } else {
-    res.status(404).json({ message: "Order not found" });
+  if (!order) {
+    return res.status(404).json({ message: "Order not found" });
   }
+
+  const newStatus = req.body.status || order.status;
+  order.status = newStatus;
+  const updatedOrder = await order.save();
+
+  // When an order is closed, also mark the related bills as Closed.
+  // This ensures admin order list and customer summary remain consistent
+  // after reload/polling.
+  if (newStatus === "Closed") {
+    try {
+      const updated = await Bill.updateMany(
+        { orderRef: order._id },
+        { $set: { status: "Closed" } }
+      );
+      // emit billUpdated events for any changed bills
+      if (updated.modifiedCount > 0) {
+        const bills = await Bill.find({ orderRef: order._id });
+        const io = req.app.get('io');
+        if (io) {
+          bills.forEach((bill) => io.emit('billUpdated', bill));
+        }
+      }
+    } catch (billError) {
+      console.error("Failed to update related bill status:", billError);
+      // continue, not fatal for order status
+    }
+  }
+
+  // emit update event so frontends can react immediately
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('orderUpdated', updatedOrder);
+  }
+
+  res.json(updatedOrder);
 };
 
 // @desc    Get all orders
