@@ -9,17 +9,46 @@ const protect = async (req, res, next) => {
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
+
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not defined in environment");
+      return res.status(500).json({ message: "Authentication misconfigured" });
+    }
+
+    const verifyToken = (tokenToVerify) => {
+      try {
+        return jwt.verify(tokenToVerify, process.env.JWT_SECRET);
+      } catch (err) {
+        if (process.env.JWT_SECRET_OLD) {
+          try {
+            return jwt.verify(tokenToVerify, process.env.JWT_SECRET_OLD);
+          } catch (oldErr) {
+            // continue to throw the original error for clarity
+          }
+        }
+        throw err;
+      }
+    };
+
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = verifyToken(token);
       req.user = await User.findById(decoded.id).select("-password");
-      
+
       if (!req.user) {
         return res.status(401).json({ message: "User not found, please login again" });
       }
 
-      next();
+      return next();
     } catch (error) {
       console.error("JWT verify error:", error);
+
+      if (error.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Token expired. Please log in again" });
+      }
+      if (error.name === "JsonWebTokenError") {
+        return res.status(401).json({ message: "Invalid token. Please log in again" });
+      }
+
       return res.status(401).json({ message: "Not authorized, token failed" });
     }
   }
