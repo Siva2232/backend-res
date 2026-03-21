@@ -10,6 +10,21 @@ const productSchema = mongoose.Schema(
     type: { type: String, enum: ["veg", "non-veg", ""], default: "" },
     stock: { type: Number, default: 0 },
     isAvailable: { type: Boolean, default: true },
+    // Add flexible subitem groups (modifiers/variants)
+    subItems: [
+      {
+        groupName: { type: String, required: true },
+        type: { type: String, enum: ["single", "multiple"], default: "single" },
+        required: { type: Boolean, default: false },
+        options: [
+          {
+            name: { type: String, required: true },
+            price: { type: Number, default: 0 },
+            extraDescription: { type: String },
+          },
+        ],
+      },
+    ],
   },
   { timestamps: true }
 );

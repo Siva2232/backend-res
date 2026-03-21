@@ -39,6 +39,7 @@ const orderSchema = mongoose.Schema(
         "Cooking",
         "Ready",
         "Served",
+        "Closed",
         "Paid",
         "Cancelled",
       ],
