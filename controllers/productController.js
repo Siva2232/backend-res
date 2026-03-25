@@ -35,7 +35,7 @@ const getProductById = async (req, res) => {
 // @access  Private/Admin
 const createProduct = async (req, res) => {
   try {
-    const { name, price, image, category, description, type, isAvailable, available, subItems } = req.body;
+    const { name, price, image, category, description, type, isAvailable, available } = req.body;
 
     if (!name || !price || !image || !category) {
       res.status(400);
@@ -51,7 +51,6 @@ const createProduct = async (req, res) => {
       type: type || "",
       stock: req.body.stock || 0,
       isAvailable: isAvailable !== undefined ? isAvailable : (available !== undefined ? available : true),
-      subItems: Array.isArray(subItems) ? subItems : [],
     });
 
     const createdProduct = await product.save();
@@ -68,7 +67,7 @@ const createProduct = async (req, res) => {
 // @access  Private/Admin
 const updateProduct = async (req, res) => {
   try {
-    const { name, price, image, category, description, isAvailable, available, type, subItems } = req.body;
+    const { name, price, image, category, description, isAvailable, available, type } = req.body;
 
     const product = await Product.findById(req.params.id);
 
@@ -86,7 +85,6 @@ const updateProduct = async (req, res) => {
           : available !== undefined
           ? available
           : product.isAvailable;
-      if (Array.isArray(subItems)) product.subItems = subItems;
 
       const updatedProduct = await product.save();
       res.json(updatedProduct);

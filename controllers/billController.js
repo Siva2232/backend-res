@@ -5,12 +5,12 @@ const Bill = require("../models/Bill");
 // @access  Public (we rely on backend to auto-create, but endpoint exists)
 const addBill = async (req, res) => {
   try {
-    const { orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails } = req.body;
+    const { orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails, cashierName } = req.body;
     if (!orderRef) {
       res.status(400).json({ message: "Missing order reference" });
       return;
     }
-    const bill = new Bill({ orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails });
+    const bill = new Bill({ orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails, cashierName });
     const created = await bill.save();
     // emit socket so dashboard updates
     const io = req.app.get('io');
@@ -41,6 +41,11 @@ const markBillPaid = async (req, res) => {
   try {
     const bill = await Bill.findById(req.params.id);
     if (!bill) return res.status(404).json({ message: "Bill not found" });
+
+    // Optionally update cashierName if provided
+    if (req.body.cashierName) {
+      bill.cashierName = req.body.cashierName;
+    }
 
     // ensure we have a sessions array
     bill.paymentSessions = bill.paymentSessions || [];
