@@ -63,4 +63,7 @@ const billSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+// Speed up the default today-only query used by the admin billing screen
+billSchema.index({ billedAt: -1 });
+
 module.exports = mongoose.model("Bill", billSchema);

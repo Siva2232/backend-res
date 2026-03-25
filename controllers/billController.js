@@ -21,12 +21,29 @@ const addBill = async (req, res) => {
   }
 };
 
-// @desc    Get all bills (admin)
+// @desc    Get bills (admin) – supports ?limit, ?today, ?from params
 // @route   GET /api/bills
 // @access  Private/Admin
 const getBills = async (req, res) => {
   try {
-    const bills = await Bill.find({}).sort({ billedAt: -1 });
+    const filter = {};
+
+    // default to today-only unless explicitly asked for more
+    if (req.query.today !== "false") {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      filter.billedAt = { $gte: start };
+    } else if (req.query.from) {
+      filter.billedAt = { $gte: new Date(req.query.from) };
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
+
+    const bills = await Bill.find(filter)
+      .sort({ billedAt: -1 })
+      .limit(limit)
+      .lean();
+
     res.json(bills);
   } catch (error) {
     res.status(500).json({ message: error.message });
