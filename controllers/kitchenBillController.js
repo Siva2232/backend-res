@@ -102,7 +102,7 @@ const updateKitchenBillStatus = async (req, res) => {
 const getActiveKitchenBills = async (req, res) => {
   try {
     const kitchenBills = await KitchenBill.find({
-      status: { $in: ["Pending", "Preparing", "Cooking", "Ready"] }
+      status: { $in: ["Pending", "New", "Preparing", "Ready"] }
     })
       .sort({ createdAt: -1 })
       .lean();

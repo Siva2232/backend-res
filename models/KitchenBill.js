@@ -40,11 +40,11 @@ const kitchenBillSchema = mongoose.Schema(
     ],
     // total for THIS batch only
     batchTotal: { type: Number, required: true },
-    // status of this batch (Pending = not started, Preparing, Cooking, Ready, Served)
+    // status of this batch (Pending = not started, New, Preparing, Ready, Served)
     status: { 
       type: String, 
       required: true,
-      enum: ["Pending", "Preparing", "Cooking", "Ready", "Served", "Cancelled"],
+      enum: ["Pending", "New", "Preparing", "Ready", "Served", "Cancelled"],
       default: "Pending" 
     },
     notes: { type: String },
