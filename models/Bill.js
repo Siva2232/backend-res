@@ -59,8 +59,6 @@ const billSchema = mongoose.Schema(
     },
     // save the timestamp when the bill was generated (usually order.createdAt)
     billedAt: { type: Date, default: Date.now },
-    // cashier name for the bill
-    cashierName: { type: String },
   },
   { timestamps: true }
 );
