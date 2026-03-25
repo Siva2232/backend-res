@@ -37,7 +37,7 @@ const addOrderItems = async (req, res) => {
   if (existingOrderId) {
     existingOrder = await Order.findOne({
       _id: existingOrderId,
-      status: { $in: ["Pending", "Preparing", "Ready"] },
+      status: { $in: ["Pending", "New", "Preparing", "Ready"] },
     });
   }
 
@@ -47,7 +47,7 @@ const addOrderItems = async (req, res) => {
     if (customerName && customerName.trim()) {
       existingOrder = await Order.findOne({
         customerName: customerName.trim(),
-        status: { $in: ["Pending", "Preparing", "Ready"] },
+        status: { $in: ["Pending", "New", "Preparing", "Ready"] },
       }).sort({ createdAt: -1 }); // Get the latest active order for this name
     }
     
@@ -56,7 +56,7 @@ const addOrderItems = async (req, res) => {
     if (!existingOrder && tableNo && tableNo !== "TAKEAWAY") {
       existingOrder = await Order.findOne({
         table: tableNo,
-        status: { $in: ["Pending", "Preparing", "Ready"] },
+        status: { $in: ["Pending", "New", "Preparing", "Ready"] },
       }).sort({ createdAt: -1 });
     }
   }
@@ -368,6 +368,13 @@ const getOrders = async (req, res) => {
     }
     
     let query = Order.find(filter).sort({ createdAt: -1 }).lean();
+    
+    // support skip for offset-based pagination
+    if (req.query.skip) {
+      const skip = parseInt(req.query.skip, 10);
+      if (!isNaN(skip) && skip > 0) query = query.skip(skip);
+    }
+    
     if (req.query.limit) {
       const limit = parseInt(req.query.limit, 10);
       if (!isNaN(limit)) query = query.limit(limit);

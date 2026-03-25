@@ -35,8 +35,8 @@ const orderSchema = mongoose.Schema(
       // expanded to match front-end statuses and future payment states
       enum: [
         "Pending",
+        "New",
         "Preparing",
-        "Cooking",
         "Ready",
         "Served",
         "Closed",
@@ -77,5 +77,7 @@ orderSchema.index({ table: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ waiter: 1 });
+// compound index for the getOrders query filtering by status and sorting by createdAt
+orderSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Order", orderSchema);
