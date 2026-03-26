@@ -33,6 +33,9 @@ const kitchenBillSchema = mongoose.Schema(
         qty: { type: Number, required: true },
         price: { type: Number, required: true },
         image: { type: String },
+        // Portion & Add-on selections
+        selectedPortion: { type: String },
+        selectedAddons: [{ name: String, price: Number }],
         addedAt: { type: Date },
         isNewItem: { type: Boolean, default: false },
         isTakeaway: { type: Boolean, default: false },
