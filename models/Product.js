@@ -10,6 +10,30 @@ const productSchema = mongoose.Schema(
     type: { type: String, enum: ["veg", "non-veg", ""], default: "" },
     stock: { type: Number, default: 0 },
     isAvailable: { type: Boolean, default: true },
+
+    // --- Portions (variants like Half / Full) ---
+    hasPortions: { type: Boolean, default: false },
+    portions: [
+      {
+        name: { type: String },
+        price: { type: Number },
+      },
+    ],
+
+    // --- Add-on groups (extras like cheese, toppings) ---
+    addonGroups: [
+      {
+        name: { type: String },
+        // max number of addons a customer can pick from this group (0 = unlimited)
+        maxSelections: { type: Number, default: 0 },
+        addons: [
+          {
+            name: { type: String },
+            price: { type: Number, default: 0 },
+          },
+        ],
+      },
+    ],
   },
   { timestamps: true }
 );

@@ -70,6 +70,8 @@ const addOrderItems = async (req, res) => {
       _id: undefined,
       addedAt: addedAt, // Mark as newly added for kitchen visibility
       isNewItem: true,
+      selectedPortion: x.selectedPortion || undefined,
+      selectedAddons: x.selectedAddons || [],
     }));
 
     existingOrder.items = [...existingOrder.items, ...newItems];
@@ -197,6 +199,8 @@ const addOrderItems = async (req, res) => {
       ...x,
       product: x._id,
       _id: undefined,
+      selectedPortion: x.selectedPortion || undefined,
+      selectedAddons: x.selectedAddons || [],
     })),
     table: tableNo,
     totalAmount,

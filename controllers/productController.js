@@ -35,7 +35,8 @@ const getProductById = async (req, res) => {
 // @access  Private/Admin
 const createProduct = async (req, res) => {
   try {
-    const { name, price, image, category, description, type, isAvailable, available } = req.body;
+    const { name, price, image, category, description, type, isAvailable, available,
+            hasPortions, portions, addonGroups } = req.body;
 
     if (!name || !price || !image || !category) {
       res.status(400);
@@ -51,6 +52,9 @@ const createProduct = async (req, res) => {
       type: type || "",
       stock: req.body.stock || 0,
       isAvailable: isAvailable !== undefined ? isAvailable : (available !== undefined ? available : true),
+      hasPortions: hasPortions || false,
+      portions: hasPortions && Array.isArray(portions) ? portions : [],
+      addonGroups: Array.isArray(addonGroups) ? addonGroups : [],
     });
 
     const createdProduct = await product.save();
@@ -67,27 +71,38 @@ const createProduct = async (req, res) => {
 // @access  Private/Admin
 const updateProduct = async (req, res) => {
   try {
-    const { name, price, image, category, description, isAvailable, available, type } = req.body;
+    const { name, price, image, category, description, isAvailable, available, type,
+            hasPortions, portions, addonGroups } = req.body;
 
-    const product = await Product.findById(req.params.id);
+    // Use findByIdAndUpdate to avoid VersionError (No matching document found for id/version)
+    // and bypass Mongoose __v versioning checks which can fail during rapid updates.
+    const updatedData = {
+      name: name !== undefined ? name : undefined,
+      price: price !== undefined ? price : undefined,
+      image: image !== undefined ? image : undefined,
+      category: category !== undefined ? category : undefined,
+      description: description !== undefined ? description : undefined,
+      type: type !== undefined ? type : undefined,
+      stock: req.body.stock !== undefined ? req.body.stock : undefined,
+      isAvailable: isAvailable !== undefined 
+        ? isAvailable 
+        : (available !== undefined ? available : undefined),
+      hasPortions: hasPortions !== undefined ? hasPortions : undefined,
+      portions: hasPortions !== undefined ? (hasPortions ? portions : []) : undefined,
+      addonGroups: addonGroups !== undefined ? addonGroups : undefined
+    };
+
+    // Remove undefined fields so they don't overwrite with null/undefined
+    Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: updatedData },
+      { returnDocument: "after", runValidators: true }
+    );
 
     if (product) {
-      product.name = name || product.name;
-      product.price = price || product.price;
-      product.image = image || product.image;
-      product.category = category || product.category;
-      product.description = description || product.description;
-      if (type !== undefined) product.type = type;
-      if (req.body.stock !== undefined) product.stock = req.body.stock;
-      product.isAvailable =
-        isAvailable !== undefined
-          ? isAvailable
-          : available !== undefined
-          ? available
-          : product.isAvailable;
-
-      const updatedProduct = await product.save();
-      res.json(updatedProduct);
+      res.json(product);
     } else {
       res.status(404).json({ message: "Product not found" });
     }
