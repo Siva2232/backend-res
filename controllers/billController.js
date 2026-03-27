@@ -32,24 +32,18 @@ const getBills = async (req, res) => {
     if (req.query.today === "true") {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
-      filter.$or = [
-        { billedAt: { $gte: start } },
-        { billedAt: { $exists: false }, createdAt: { $gte: start } },
-      ];
+      filter.billedAt = { $gte: start };
     } else if (req.query.from) {
       const fromDate = new Date(req.query.from);
-      filter.$or = [
-        { billedAt: { $gte: fromDate } },
-        { billedAt: { $exists: false }, createdAt: { $gte: fromDate } },
-      ];
+      filter.billedAt = { $gte: fromDate };
     }
 
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
     const bills = await Bill.find(filter)
-      .sort({ billedAt: -1, createdAt: -1 })
+      .sort({ billedAt: -1 })
       .limit(limit)
-      .select("-__v -paymentId")
+      .select("-__v -paymentId -items.image -items.product")
       .lean();
 
     res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
