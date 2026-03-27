@@ -5,15 +5,35 @@ const Product = require("../models/Product");
 // @access  Public
 const getProducts = async (req, res) => {
   // allow browser/client caching for a short period
-  res.set('Cache-Control', 'public, max-age=30');
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
 
-  let query = Product.find({}).lean();
-  if (req.query.limit) {
-    const limit = parseInt(req.query.limit, 10);
-    if (!isNaN(limit)) query = query.limit(limit);
+  try {
+    const { category, isAvailable, limit, fields } = req.query;
+    let queryObj = {};
+
+    if (category) queryObj.category = category;
+    if (isAvailable !== undefined) queryObj.isAvailable = isAvailable === 'true';
+
+    let query = Product.find(queryObj).lean();
+
+    // Field selection to reduce payload size
+    if (fields) {
+      query = query.select(fields.split(',').join(' '));
+    }
+
+    if (limit) {
+      const limitVal = parseInt(limit, 10);
+      if (!isNaN(limitVal)) query = query.limit(limitVal);
+    }
+
+    // Sort by name or newest by default
+    query = query.sort({ createdAt: -1 });
+
+    const products = await query;
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: "Server Error fetching products" });
   }
-  const products = await query;
-  res.json(products);
 };
 
 // @desc    Fetch single product

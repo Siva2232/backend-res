@@ -28,24 +28,34 @@ const getBills = async (req, res) => {
   try {
     const filter = {};
 
-    // default to today-only unless explicitly asked for more
-    if (req.query.today !== "false") {
+    // only filter by date when explicitly requested
+    if (req.query.today === "true") {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
-      filter.billedAt = { $gte: start };
+      filter.$or = [
+        { billedAt: { $gte: start } },
+        { billedAt: { $exists: false }, createdAt: { $gte: start } },
+      ];
     } else if (req.query.from) {
-      filter.billedAt = { $gte: new Date(req.query.from) };
+      const fromDate = new Date(req.query.from);
+      filter.$or = [
+        { billedAt: { $gte: fromDate } },
+        { billedAt: { $exists: false }, createdAt: { $gte: fromDate } },
+      ];
     }
 
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
     const bills = await Bill.find(filter)
-      .sort({ billedAt: -1 })
+      .sort({ billedAt: -1, createdAt: -1 })
       .limit(limit)
+      .select("-__v -paymentId")
       .lean();
 
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
     res.json(bills);
   } catch (error) {
+    console.error("getBills error:", error);
     res.status(500).json({ message: error.message });
   }
 };

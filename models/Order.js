@@ -78,9 +78,9 @@ const orderSchema = mongoose.Schema(
 // create useful indexes to speed up frequent lookups
 orderSchema.index({ table: 1 });
 orderSchema.index({ status: 1 });
+// compound index: the most common admin query is status-filtered sorted by newest first
+orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ waiter: 1 });
-// compound index for the getOrders query filtering by status and sorting by createdAt
-orderSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Order", orderSchema);

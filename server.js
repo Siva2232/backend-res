@@ -83,10 +83,13 @@ const io = new Server(server, {
 io.on('connection', async (socket) => {
   console.log('socket client connected', socket.id);
 
-  // send a one-time snapshot so the client can populate immediately
+  // send a lightweight snapshot of active orders only (no images/heavy fields)
   try {
     const Order = require('./models/Order');
-    const orders = await Order.find({}).sort({ createdAt: -1 }).lean();
+    const orders = await Order.find(
+      { status: { $in: ['Pending', 'New', 'Preparing', 'Ready', 'Served'] } },
+      { 'items.image': 0, 'items.product': 0, waiter: 0, paymentId: 0, __v: 0 }
+    ).sort({ createdAt: -1 }).limit(100).lean();
     socket.emit('ordersSnapshot', orders);
   } catch (err) {
     console.error('failed to load orders for socket snapshot', err);

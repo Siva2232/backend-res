@@ -5,6 +5,9 @@ const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
       tlsAllowInvalidCertificates: true,
       serverSelectionTimeoutMS: 5000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      socketTimeoutMS: 30000,
     });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
