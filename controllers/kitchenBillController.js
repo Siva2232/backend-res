@@ -28,6 +28,7 @@ const getKitchenBills = async (req, res) => {
       if (!isNaN(limit)) query = query.limit(limit);
     }
     
+    query = query.select("-__v -items.image -items.product -items.addedAt -items.isNewItem");
     const kitchenBills = await query.lean();
     res.json(kitchenBills);
   } catch (error) {
@@ -104,8 +105,11 @@ const getActiveKitchenBills = async (req, res) => {
     const kitchenBills = await KitchenBill.find({
       status: { $in: ["Pending", "New", "Preparing", "Ready"] }
     })
+      .select("-__v -items.image -items.product -items.addedAt -items.isNewItem")
       .sort({ createdAt: -1 })
+      .limit(200)
       .lean();
+    res.set('Cache-Control', 'public, max-age=10, stale-while-revalidate=5');
     res.json(kitchenBills);
   } catch (error) {
     console.error("Error fetching active kitchen bills:", error);
