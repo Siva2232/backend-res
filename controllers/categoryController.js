@@ -5,7 +5,8 @@ const Category = require("../models/Category");
 // @access  Public
 const getCategories = async (req, res) => {
   try {
-    const categories = await Category.find({}).sort({ name: 1 });
+    res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+    const categories = await Category.find({}).select("name").sort({ name: 1 }).lean();
     res.json(categories);
   } catch (error) {
     res.status(500).json({ message: error.message });

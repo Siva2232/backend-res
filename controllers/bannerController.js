@@ -1,7 +1,8 @@
 const Banner = require("../models/Banner");
 
 const getBanners = async (req, res) => {
-  const banners = await Banner.find({});
+  res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  const banners = await Banner.find({}).select('title description imageUrl tag').lean();
   res.json(banners);
 };
 

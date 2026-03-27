@@ -363,27 +363,27 @@ const updateOrderStatus = async (req, res) => {
 // @route   GET /api/orders
 // @access  Private/Admin
 const getOrders = async (req, res) => {
+  // enable client-side caching for 30 seconds
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=15');
+
   try {
-    // allow an optional ?limit= parameter for pagination
     let filter = {};
     if (req.query.status) {
       const statuses = req.query.status.split(",");
       filter.status = { $in: statuses };
     }
-    
-    let query = Order.find(filter).sort({ createdAt: -1 }).lean();
-    
-    // support skip for offset-based pagination
-    if (req.query.skip) {
-      const skip = parseInt(req.query.skip, 10);
-      if (!isNaN(skip) && skip > 0) query = query.skip(skip);
-    }
-    
-    if (req.query.limit) {
-      const limit = parseInt(req.query.limit, 10);
-      if (!isNaN(limit)) query = query.limit(limit);
-    }
-    const orders = await query;
+
+    // default to 100 if no limit provided to avoid unbounded fetches
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 100;
+    const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
+
+    const orders = await Order.find(filter)
+      .select('-items.image -items.product -waiter -paymentId -__v')
+      .sort({ createdAt: -1 })
+      .skip(skip > 0 ? skip : 0)
+      .limit(!isNaN(limit) && limit > 0 ? limit : 100)
+      .lean();
+
     res.json(orders);
   } catch (error) {
     console.error("getOrders error", error);

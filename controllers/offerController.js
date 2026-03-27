@@ -1,7 +1,10 @@
 const Offer = require("../models/Offer");
 
 const getOffers = async (req, res) => {
-  const offers = await Offer.find({});
+  res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  const offers = await Offer.find({ isPublished: true }).select(
+    "title description imageUrl tag"
+  ).lean();
   res.json(offers);
 };
 
