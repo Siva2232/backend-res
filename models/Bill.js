@@ -68,7 +68,5 @@ const billSchema = mongoose.Schema(
 
 // Speed up the default today-only query used by the admin billing screen
 billSchema.index({ billedAt: -1 });
-// Compound index for createdAt fallback queries
-billSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Bill", billSchema);
