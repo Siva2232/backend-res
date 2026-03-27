@@ -1,6 +1,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const compression = require("compression");
 const connectDB = require("./config/db");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -65,6 +66,9 @@ app.use(
     credentials: true,
   })
 );
+
+// gzip compress all responses
+app.use(compression());
 
 // allow larger payloads for base64 image upload
 app.use(express.json({ limit: "5mb" }));
