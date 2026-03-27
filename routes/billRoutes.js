@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { addBill, getBills } = require("../controllers/billController");
+const { addBill, getBills, markBillPaid, closeBill } = require("../controllers/billController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
 // public create route, might be used internally by order logic
@@ -11,6 +11,9 @@ const { adminOrKitchenOrWaiter } = require('../middleware/authMiddleware');
 router.get("/", protect, adminOrKitchenOrWaiter, getBills);
 
 // mark cash bill as paid (any staff can collect cash)
-router.put("/:id/pay", protect, adminOrKitchenOrWaiter, require('../controllers/billController').markBillPaid);
+router.put("/:id/pay", protect, adminOrKitchenOrWaiter, markBillPaid);
+
+// close bill (mark order as complete)
+router.put("/:id/close", protect, adminOrKitchenOrWaiter, closeBill);
 
 module.exports = router;

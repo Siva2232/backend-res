@@ -128,4 +128,39 @@ const markBillPaid = async (req, res) => {
   }
 };
 
-module.exports = { addBill, getBills, markBillPaid };
+// @desc    Close bill/order
+// @route   PUT /api/bills/:id/close
+// @access  Private/Admin
+const closeBill = async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.id);
+    if (!bill) return res.status(404).json({ message: "Bill not found" });
+
+    // A bill can only be closed if it's paid
+    if (bill.paymentStatus !== "paid") {
+      return res.status(400).json({ message: "Cannot close an unpaid bill" });
+    }
+
+    bill.status = "Closed";
+    await bill.save();
+
+    // Sync order
+    const Order = require("../models/Order");
+    const order = await Order.findById(bill.orderRef);
+    if (order) {
+      order.status = "Closed";
+      await order.save();
+      const io = req.app.get("io");
+      if (io) io.emit("orderUpdated", order);
+    }
+
+    const io = req.app.get("io");
+    if (io) io.emit("billUpdated", bill);
+    res.json(bill);
+  } catch (error) {
+    console.error("closeBill error", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { addBill, getBills, markBillPaid, closeBill };
