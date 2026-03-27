@@ -62,5 +62,7 @@ kitchenBillSchema.index({ orderRef: 1, batchNumber: 1 });
 kitchenBillSchema.index({ table: 1 });
 kitchenBillSchema.index({ status: 1 });
 kitchenBillSchema.index({ createdAt: -1 });
+// Compound index for the active kitchen bills query (status + sort)
+kitchenBillSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model("KitchenBill", kitchenBillSchema);
