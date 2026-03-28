@@ -382,8 +382,8 @@ const updateOrderStatus = async (req, res) => {
 // @route   GET /api/orders
 // @access  Private/Admin
 const getOrders = async (req, res) => {
-  // enable client-side caching for 30 seconds
-  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=15');
+  // enable client-side caching for 10 seconds to handle rapid re-rendering
+  res.set('Cache-Control', 'public, max-age=10, stale-while-revalidate=5');
 
   try {
     let filter = {};
@@ -392,15 +392,23 @@ const getOrders = async (req, res) => {
       filter.status = { $in: statuses };
     }
 
-    // default to 40 if no limit provided to avoid unbounded fetches
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 40;
+    // performance optimization: if we have "today" param, filter to current day
+    if (req.query.today === "true") {
+      const startOfDay = new Date();
+      startOfDay.setHours(0,0,0,0);
+      filter.createdAt = { $gte: startOfDay };
+    }
+
+    // default to 50 if no limit provided
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
     const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
 
+    // optimization: only fetch necessary fields for the order list
     const orders = await Order.find(filter)
-      .select('-items.image -items.product -waiter -paymentId -__v')
+      .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price')
       .sort({ createdAt: -1 })
       .skip(skip > 0 ? skip : 0)
-      .limit(!isNaN(limit) && limit > 0 ? (limit > 100 ? 100 : limit) : 40)
+      .limit(limit > 200 ? 200 : limit)
       .lean();
 
     res.json(orders);
