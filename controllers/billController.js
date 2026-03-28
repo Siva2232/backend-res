@@ -24,16 +24,11 @@ const addBill = async (req, res) => {
 // @desc    Get bills (admin) – supports ?limit, ?today, ?from params
 // @route   GET /api/bills
 // @access  Private/Admin
-const isNetworkTimeout = (err) =>
-  err?.name === "MongoNetworkTimeoutError" ||
-  err?.name === "MongoNetworkError" ||
-  (err?.code === "ETIMEDOUT") ||
-  (err?.errorLabels && err.errorLabels.includes("RetryableWriteError"));
-
 const getBills = async (req, res) => {
-  const runQuery = async () => {
+  try {
     const filter = {};
 
+    // only filter by date when explicitly requested
     if (req.query.today === "true") {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
@@ -45,32 +40,17 @@ const getBills = async (req, res) => {
 
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
-    return Bill.find(filter)
+    const bills = await Bill.find(filter)
       .sort({ billedAt: -1 })
       .limit(limit)
       .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
       .lean();
-  };
 
-  try {
-    let bills;
-    try {
-      bills = await runQuery();
-    } catch (firstErr) {
-      if (isNetworkTimeout(firstErr)) {
-        // One automatic retry after a brief pause so the pool can recover
-        console.warn("getBills: network timeout — retrying once...");
-        await new Promise((r) => setTimeout(r, 2000));
-        bills = await runQuery();
-      } else {
-        throw firstErr;
-      }
-    }
-    res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=10");
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
     res.json(bills);
   } catch (error) {
     console.error("getBills error:", error);
-    res.status(503).json({ message: "Database temporarily unavailable. Please try again in a moment." });
+    res.status(500).json({ message: error.message });
   }
 };
 
