@@ -38,22 +38,22 @@ const getBills = async (req, res) => {
       filter.billedAt = { $gte: fromDate };
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
 
     let bills;
     try {
       bills = await Bill.find(filter)
-        .sort({ billedAt: -1 })
+        .sort({ billedAt: -1, _id: -1 })
         .limit(limit)
-        .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
+        .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
         .lean();
     } catch (firstErr) {
       // retry once on transient network errors
       console.warn("getBills first attempt failed, retrying...", firstErr.message);
       bills = await Bill.find(filter)
-        .sort({ billedAt: -1 })
+        .sort({ billedAt: -1, _id: -1 })
         .limit(limit)
-        .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
+        .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
         .lean();
     }
 
