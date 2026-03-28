@@ -35,15 +35,6 @@ connectDB()
     server.listen(PORT, () =>
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
     );
-
-    // Keep-alive ping every 30 s so Render→Atlas TCP connections don't go idle
-    // and get silently dropped by the network (root cause of MongoNetworkTimeoutError)
-    const mongoose = require("mongoose");
-    setInterval(() => {
-      if (mongoose.connection.readyState === 1) {
-        mongoose.connection.db.admin().ping().catch(() => {});
-      }
-    }, 30000);
   })
   .catch((err) => {
     console.error("MongoDB connection failed:", err);
