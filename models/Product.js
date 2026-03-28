@@ -17,6 +17,7 @@ const productSchema = mongoose.Schema(
       {
         name: { type: String },
         price: { type: Number },
+        isAvailable: { type: Boolean, default: true },
       },
     ],
 
@@ -26,6 +27,7 @@ const productSchema = mongoose.Schema(
         name: { type: String },
         // max number of addons a customer can pick from this group (0 = unlimited)
         maxSelections: { type: Number, default: 0 },
+        isAvailable: { type: Boolean, default: true },
         addons: [
           {
             name: { type: String },

@@ -14,6 +14,7 @@ const categoryRoutes = require("./routes/categoryRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const subItemRoutes = require("./routes/subItemRoutes");
+const tableRoutes = require("./routes/tableRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -78,11 +79,12 @@ app.use(express.urlencoded({ limit: "5mb", extended: true }));
 const { Server } = require('socket.io');
 const io = new Server(server, {
   cors: {
-    origin: "https://restowebtest.netlify.app",
+    origin: "*", 
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
 });
+app.set('io', io);
 
 io.on('connection', async (socket) => {
   console.log('socket client connected', socket.id);
@@ -122,6 +124,7 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/sub-items", subItemRoutes);
+app.use("/api/tables", tableRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
