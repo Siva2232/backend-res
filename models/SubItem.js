@@ -29,8 +29,14 @@ const subItemSchema = new mongoose.Schema(
         price: { type: Number, default: 0 },
       },
     ],
+
+    // For bulk portions: category/group reference (e.g. "Alpahm")
+    category: { type: String, trim: true },
   },
   { timestamps: true }
 );
+
+// Index for bulk lookups
+subItemSchema.index({ category: 1 });
 
 module.exports = mongoose.model("SubItem", subItemSchema);

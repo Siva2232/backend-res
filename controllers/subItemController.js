@@ -4,18 +4,39 @@ const SubItem = require("../models/SubItem");
 // @route   GET /api/sub-items
 const getSubItems = async (req, res) => {
   try {
-    const items = await SubItem.find({}).sort({ type: 1, name: 1 });
+    const filter = {};
+    if (req.query.type) filter.type = req.query.type;
+    if (req.query.category) filter.category = req.query.category;
+
+    const items = await SubItem.find(filter).sort({ type: 1, name: 1 });
     res.json(items);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// @desc    Create a sub-item
+// @desc    Create a sub-item (supports single or bulk via category)
 // @route   POST /api/sub-items
 const createSubItem = async (req, res) => {
   try {
-    const { type, name, price, maxSelections, addons } = req.body;
+    const { type, name, price, maxSelections, addons, category, items } = req.body;
+
+    // Bulk creation mode
+    if (items && Array.isArray(items) && type === "portion" && category) {
+      const createdItems = await Promise.all(
+        items.map((item) =>
+          SubItem.create({
+            type: "portion",
+            name: item.name.trim(),
+            price: Number(item.price) || 0,
+            category: category.trim(),
+            isAvailable: true,
+          })
+        )
+      );
+      return res.status(201).json(createdItems);
+    }
+
     if (!type || !name?.trim()) {
       return res.status(400).json({ message: "Type and name are required" });
     }
@@ -25,6 +46,7 @@ const createSubItem = async (req, res) => {
       price: Number(price) || 0,
       maxSelections: Number(maxSelections) || 0,
       addons: addons || [],
+      category: category ? category.trim() : undefined,
     });
     res.status(201).json(item);
   } catch (err) {
@@ -36,7 +58,7 @@ const createSubItem = async (req, res) => {
 // @route   PUT /api/sub-items/:id
 const updateSubItem = async (req, res) => {
   try {
-    const { name, price, maxSelections, addons, isAvailable, type } = req.body;
+    const { name, price, maxSelections, addons, isAvailable, type, category } = req.body;
     
     // Prepare update object
     const update = {};
@@ -46,6 +68,7 @@ const updateSubItem = async (req, res) => {
     if (addons !== undefined) update.addons = addons;
     if (isAvailable !== undefined) update.isAvailable = isAvailable;
     if (type !== undefined) update.type = type;
+    if (category !== undefined) update.category = category.trim();
 
     const updated = await SubItem.findByIdAndUpdate(
       req.params.id,

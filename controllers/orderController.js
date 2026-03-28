@@ -392,15 +392,15 @@ const getOrders = async (req, res) => {
       filter.status = { $in: statuses };
     }
 
-    // default to 100 if no limit provided to avoid unbounded fetches
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 100;
+    // default to 40 if no limit provided to avoid unbounded fetches
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 40;
     const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
 
     const orders = await Order.find(filter)
       .select('-items.image -items.product -waiter -paymentId -__v')
       .sort({ createdAt: -1 })
       .skip(skip > 0 ? skip : 0)
-      .limit(!isNaN(limit) && limit > 0 ? limit : 100)
+      .limit(!isNaN(limit) && limit > 0 ? (limit > 100 ? 100 : limit) : 40)
       .lean();
 
     res.json(orders);
