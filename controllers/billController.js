@@ -43,7 +43,7 @@ const getBills = async (req, res) => {
     const bills = await Bill.find(filter)
       .sort({ billedAt: -1 })
       .limit(limit)
-      .select("-__v -paymentId -items.image -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
+      .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
       .lean();
 
     res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
