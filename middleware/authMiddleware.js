@@ -82,7 +82,7 @@ const adminOrKitchen = (req, res, next) => {
   }
 };
 
-// permits admin, kitchen, or waiter roles (for updating order status)
+// permits admin, kitchen, or waiter roles (for updating order status, managing tables)
 const adminOrKitchenOrWaiter = (req, res, next) => {
   if (
     req.user &&
@@ -97,4 +97,17 @@ const adminOrKitchenOrWaiter = (req, res, next) => {
   }
 };
 
-module.exports = { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter };
+const adminOrWaiter = (req, res, next) => {
+  if (
+    req.user &&
+    ((req.user.isAdmin === true || String(req.user.isAdmin).toLowerCase() === "true") ||
+      (req.user.isWaiter === true || String(req.user.isWaiter).toLowerCase() === "true"))
+  ) {
+    next();
+  } else {
+    console.warn(`Admin/Waiter access denied for user: ${req.user ? req.user.email : 'Unknown'}`);
+    res.status(403).json({ message: "Not authorized" });
+  }
+};
+
+module.exports = { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter, adminOrWaiter };

@@ -16,7 +16,7 @@ const { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter } = require("../m
 router
   .route("/")
   .post(addOrderItems)
-  .get(protect, adminOrKitchen, getOrders);
+  .get(protect, adminOrKitchenOrWaiter, getOrders);
 
 // dedicated manual-order endpoint, requires auth
 router.post("/manual", protect, admin, addManualOrder);
