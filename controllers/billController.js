@@ -40,11 +40,22 @@ const getBills = async (req, res) => {
 
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
-    const bills = await Bill.find(filter)
-      .sort({ billedAt: -1 })
-      .limit(limit)
-      .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
-      .lean();
+    let bills;
+    try {
+      bills = await Bill.find(filter)
+        .sort({ billedAt: -1 })
+        .limit(limit)
+        .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
+        .lean();
+    } catch (firstErr) {
+      // retry once on transient network errors
+      console.warn("getBills first attempt failed, retrying...", firstErr.message);
+      bills = await Bill.find(filter)
+        .sort({ billedAt: -1 })
+        .limit(limit)
+        .select("-__v -paymentId -items.product -items.selectedAddons -items.addedAt -items.isNewItem")
+        .lean();
+    }
 
     res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
     res.json(bills);
