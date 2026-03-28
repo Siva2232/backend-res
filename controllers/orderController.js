@@ -42,23 +42,35 @@ const addOrderItems = async (req, res) => {
   }
 
   // automatic merge heuristics when no explicit id given
-  if (!existingOrder) {
-    // if customer provided, try by name first (useful for takeaways)
+  // skip these extra queries when existingOrderId was provided (even if not found)
+  if (!existingOrder && !existingOrderId) {
+    // run customerName and table lookups in parallel to save time
+    const mergeQueries = [];
+
     if (customerName && customerName.trim()) {
-      existingOrder = await Order.findOne({
-        customerName: customerName.trim(),
-        status: { $in: ["Pending", "New", "Preparing", "Ready"] },
-      }).sort({ createdAt: -1 }); // Get the latest active order for this name
+      mergeQueries.push(
+        Order.findOne({
+          customerName: customerName.trim(),
+          status: { $in: ["Pending", "New", "Preparing", "Ready"] },
+        }).sort({ createdAt: -1 })
+      );
+    } else {
+      mergeQueries.push(Promise.resolve(null));
     }
-    
-    // if still no match and a specific table (non-takeaway) is given,
-    // merge into that table's active order
-    if (!existingOrder && tableNo && tableNo !== "TAKEAWAY") {
-      existingOrder = await Order.findOne({
-        table: tableNo,
-        status: { $in: ["Pending", "New", "Preparing", "Ready"] },
-      }).sort({ createdAt: -1 });
+
+    if (tableNo && tableNo !== "TAKEAWAY") {
+      mergeQueries.push(
+        Order.findOne({
+          table: tableNo,
+          status: { $in: ["Pending", "New", "Preparing", "Ready"] },
+        }).sort({ createdAt: -1 })
+      );
+    } else {
+      mergeQueries.push(Promise.resolve(null));
     }
+
+    const [byName, byTable] = await Promise.all(mergeQueries);
+    existingOrder = byName || byTable;
   }
 
   if (existingOrder) {
@@ -118,79 +130,88 @@ const addOrderItems = async (req, res) => {
 
     const updatedOrder = await existingOrder.save();
 
-    // Update the corresponding bill with recalculated totals
-    const bill = await Bill.findOne({ orderRef: updatedOrder._id });
-    if (bill) {
-      bill.items = updatedOrder.items;
-      bill.totalAmount = updatedOrder.totalAmount;
-      bill.billDetails = updatedOrder.billDetails;
-      bill.customerName = updatedOrder.customerName;
-      bill.customerAddress = updatedOrder.customerAddress;
-      bill.deliveryTime = updatedOrder.deliveryTime;
-      bill.hasTakeaway = updatedOrder.hasTakeaway;
-      bill.notes = updatedOrder.notes;
-      bill.paymentSessions = updatedOrder.paymentSessions;
-      
-      // Overall payment status logic for the whole bill
-      const allPaid = bill.paymentSessions.every(s => s.status === "paid");
-      const anyPaid = bill.paymentSessions.some(s => s.status === "paid");
-      
-      if (allPaid) {
-        bill.paymentStatus = "paid";
-      } else if (anyPaid) {
-        bill.paymentStatus = "partially_paid";
-      } else {
-        bill.paymentStatus = "pending";
+    // RESPOND IMMEDIATELY — don't make the client wait for bill/kitchen updates
+    res.status(200).json(updatedOrder);
+
+    // Fire-and-forget: update bill, create kitchen bill, emit socket events
+    // These run in the background after the response is sent
+    (async () => {
+      try {
+        const io = req.app.get("io");
+
+        // Run bill update and kitchen bill creation in parallel
+        const billUpdatePromise = (async () => {
+          const bill = await Bill.findOne({ orderRef: updatedOrder._id });
+          if (bill) {
+            bill.items = updatedOrder.items;
+            bill.totalAmount = updatedOrder.totalAmount;
+            bill.billDetails = updatedOrder.billDetails;
+            bill.customerName = updatedOrder.customerName;
+            bill.customerAddress = updatedOrder.customerAddress;
+            bill.deliveryTime = updatedOrder.deliveryTime;
+            bill.hasTakeaway = updatedOrder.hasTakeaway;
+            bill.notes = updatedOrder.notes;
+            bill.paymentSessions = updatedOrder.paymentSessions;
+            
+            const allPaid = bill.paymentSessions.every(s => s.status === "paid");
+            const anyPaid = bill.paymentSessions.some(s => s.status === "paid");
+            
+            if (allPaid) {
+              bill.paymentStatus = "paid";
+            } else if (anyPaid) {
+              bill.paymentStatus = "partially_paid";
+            } else {
+              bill.paymentStatus = "pending";
+            }
+            
+            await bill.save();
+            if (io) io.emit("billUpdated", bill);
+          }
+        })();
+
+        const kitchenBillPromise = (async () => {
+          const lastBatch = await KitchenBill.findOne({ orderRef: updatedOrder._id })
+            .sort({ batchNumber: -1 })
+            .select("batchNumber")
+            .lean();
+          const nextBatchNumber = lastBatch ? lastBatch.batchNumber + 1 : 2;
+          
+          const batchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+          
+          const kitchenBill = await KitchenBill.create({
+            orderRef: updatedOrder._id,
+            batchNumber: nextBatchNumber,
+            table: updatedOrder.table,
+            hasTakeaway: updatedOrder.hasTakeaway,
+            customerName: updatedOrder.customerName,
+            customerAddress: updatedOrder.customerAddress,
+            deliveryTime: updatedOrder.deliveryTime,
+            items: newItems,
+            batchTotal: batchTotal,
+            status: "Pending",
+            notes: notes || "",
+          });
+          
+          if (io && kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+        })();
+
+        await Promise.all([billUpdatePromise, kitchenBillPromise]);
+
+        if (io) {
+          io.emit("orderUpdated", updatedOrder);
+          io.emit("orderItemsAdded", {
+            order: updatedOrder,
+            newItems: newItems,
+            table: updatedOrder.table,
+            addedAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        console.error("Background bill/kitchen update error:", err);
       }
-      
-      await bill.save();
-    }
+    })();
 
-    // Create a NEW KitchenBill for this batch of items (separate ticket for kitchen/waiter)
-    try {
-      // Find the highest existing batch number for this order
-      const existingKitchenBills = await KitchenBill.find({ orderRef: updatedOrder._id }).sort({ batchNumber: -1 });
-      const nextBatchNumber = existingKitchenBills.length > 0 ? existingKitchenBills[0].batchNumber + 1 : 2;
-      
-      // Calculate batch total for just the new items
-      const batchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-      
-      const kitchenBill = await KitchenBill.create({
-        orderRef: updatedOrder._id,
-        batchNumber: nextBatchNumber,
-        table: updatedOrder.table,
-        hasTakeaway: updatedOrder.hasTakeaway,
-        customerName: updatedOrder.customerName,
-        customerAddress: updatedOrder.customerAddress,
-        deliveryTime: updatedOrder.deliveryTime,
-        items: newItems,
-        batchTotal: batchTotal,
-        status: "Pending",
-        notes: notes || "",
-      });
-      
-      const io = req.app.get("io");
-      if (io && kitchenBill) {
-        io.emit("kitchenBillCreated", kitchenBill);
-      }
-    } catch (err) {
-      console.error("Failed to create kitchen bill for added items:", err);
-    }
-
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("orderUpdated", updatedOrder);
-      if (bill) io.emit("billUpdated", bill);
-      // Emit special event for "Add More Items" notification in admin panel
-      io.emit("orderItemsAdded", {
-        order: updatedOrder,
-        newItems: newItems,
-        table: updatedOrder.table,
-        addedAt: new Date().toISOString(),
-      });
-    }
-
-    return res.status(200).json(updatedOrder);
+    return;
   }
 
   // If no existing active order, create a new one
@@ -230,7 +251,7 @@ const addOrderItems = async (req, res) => {
     try {
       const token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const authUser = await User.findById(decoded.id);
+      const authUser = await User.findById(decoded.id).select("_id isWaiter").lean();
       if (authUser && authUser.isWaiter) {
         orderData.waiter = authUser._id;
       }
@@ -242,62 +263,60 @@ const addOrderItems = async (req, res) => {
   const order = new Order(orderData);
   const createdOrder = await order.save();
 
-  const io = req.app.get("io");
-  if (io) {
-    io.emit("orderCreated", createdOrder);
-  }
-
-  // Create initial bill
-  try {
-    const newBill = await Bill.create({
-      orderRef: createdOrder._id,
-      table: createdOrder.table,
-      hasTakeaway: createdOrder.hasTakeaway, // Include takeaway flag in bill
-      customerName: createdOrder.customerName,
-      customerAddress: createdOrder.customerAddress,
-      deliveryTime: createdOrder.deliveryTime,
-      items: createdOrder.items,
-      totalAmount: createdOrder.totalAmount,
-      status: createdOrder.status,
-      paymentMethod: createdOrder.paymentMethod,
-      paymentStatus: createdOrder.paymentStatus,
-      paymentId: createdOrder.paymentId,
-      paymentSessions: createdOrder.paymentSessions,
-      notes: createdOrder.notes,
-      billDetails: createdOrder.billDetails,
-      billedAt: createdOrder.createdAt,
-    });
-    if (io && newBill) {
-      io.emit("billCreated", newBill);
-    }
-  } catch (err) {
-    console.error("Failed to create bill:", err);
-  }
-
-  // Create initial KitchenBill (batch 1) for kitchen/waiter view
-  try {
-    const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const kitchenBill = await KitchenBill.create({
-      orderRef: createdOrder._id,
-      batchNumber: 1,
-      table: createdOrder.table,
-      hasTakeaway: createdOrder.hasTakeaway,
-      customerName: createdOrder.customerName,
-      customerAddress: createdOrder.customerAddress,
-      deliveryTime: createdOrder.deliveryTime,
-      items: createdOrder.items,
-      batchTotal: batchTotal,
-      status: createdOrder.status,
-      notes: createdOrder.notes,
-    });
-    if (io && kitchenBill) {
-      io.emit("kitchenBillCreated", kitchenBill);
-    }
-  } catch (err) {
-    console.error("Failed to create kitchen bill:", err);
-  }
-
+  // RESPOND IMMEDIATELY — don't make the client wait for bill/kitchen creation
   res.status(201).json(createdOrder);
+
+  // Fire-and-forget: create bill, kitchen bill, emit socket events in background
+  (async () => {
+    try {
+      const io = req.app.get("io");
+      if (io) io.emit("orderCreated", createdOrder);
+
+      // Create bill and kitchen bill in parallel
+      const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+      const [newBill, kitchenBill] = await Promise.all([
+        Bill.create({
+          orderRef: createdOrder._id,
+          table: createdOrder.table,
+          hasTakeaway: createdOrder.hasTakeaway,
+          customerName: createdOrder.customerName,
+          customerAddress: createdOrder.customerAddress,
+          deliveryTime: createdOrder.deliveryTime,
+          items: createdOrder.items,
+          totalAmount: createdOrder.totalAmount,
+          status: createdOrder.status,
+          paymentMethod: createdOrder.paymentMethod,
+          paymentStatus: createdOrder.paymentStatus,
+          paymentId: createdOrder.paymentId,
+          paymentSessions: createdOrder.paymentSessions,
+          notes: createdOrder.notes,
+          billDetails: createdOrder.billDetails,
+          billedAt: createdOrder.createdAt,
+        }),
+        KitchenBill.create({
+          orderRef: createdOrder._id,
+          batchNumber: 1,
+          table: createdOrder.table,
+          hasTakeaway: createdOrder.hasTakeaway,
+          customerName: createdOrder.customerName,
+          customerAddress: createdOrder.customerAddress,
+          deliveryTime: createdOrder.deliveryTime,
+          items: createdOrder.items,
+          batchTotal: batchTotal,
+          status: createdOrder.status,
+          notes: createdOrder.notes,
+        }),
+      ]);
+
+      if (io) {
+        if (newBill) io.emit("billCreated", newBill);
+        if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+      }
+    } catch (err) {
+      console.error("Background bill/kitchen creation error:", err);
+    }
+  })();
 };
 
 // @desc    Get order by ID
@@ -395,8 +414,13 @@ const getOrders = async (req, res) => {
 // @route   GET /api/orders/table/:tableNum
 // @access  Public
 const getTableOrders = async (req, res) => {
-  const orders = await Order.find({ table: req.params.tableNum })
+  const orders = await Order.find({
+    table: req.params.tableNum,
+    status: { $in: ["Pending", "New", "Preparing", "Ready", "Served"] },
+  })
+    .select('-items.product -waiter -paymentId -__v')
     .sort({ createdAt: -1 })
+    .limit(20)
     .lean();
   res.json(orders);
 };
