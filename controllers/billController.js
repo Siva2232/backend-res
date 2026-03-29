@@ -38,11 +38,17 @@ const getBills = async (req, res) => {
       filter.billedAt = { $gte: fromDate };
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
 
     let bills;
     try {
-      bills = await Bill.find(filter)
+      // Optimized query: only fetch non-closed bills or very recent closed ones
+      const query = { ...filter };
+      if (!req.query.today && !req.query.from) {
+        query.$or = [{ status: { $ne: "Closed" } }, { billedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }];
+      }
+
+      bills = await Bill.find(query)
         .sort({ billedAt: -1, _id: -1 })
         .limit(limit)
         .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")

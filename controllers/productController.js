@@ -78,6 +78,14 @@ const createProduct = async (req, res) => {
     });
 
     const createdProduct = await product.save();
+
+    // Broadcast creation to all clients
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('productUpdated', createdProduct);
+      io.emit('productsUpdated');
+    }
+
     res.status(201).json(createdProduct);
   } catch (error) {
     console.error("Create product error:", error);
@@ -122,6 +130,13 @@ const updateProduct = async (req, res) => {
     );
 
     if (product) {
+      // Broadcast update to all clients to refresh products instantly
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('productUpdated', product); // Emit the specific product that was updated
+        io.emit('productsUpdated'); // General event for bulk refresh if needed
+      }
+
       res.json(product);
     } else {
       res.status(404).json({ message: "Product not found" });
@@ -139,7 +154,16 @@ const deleteProduct = async (req, res) => {
   const product = await Product.findById(req.params.id);
 
   if (product) {
-    await Product.deleteOne({ _id: product._id });
+    const productId = product._id;
+    await Product.deleteOne({ _id: productId });
+    
+    // Broadcast deletion to all clients
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('productDeleted', productId);
+      io.emit('productsUpdated');
+    }
+    
     res.json({ message: "Product removed" });
   } else {
     res.status(404).json({ message: "Product not found" });
