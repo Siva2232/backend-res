@@ -263,60 +263,52 @@ const addOrderItems = async (req, res) => {
   const order = new Order(orderData);
   const createdOrder = await order.save();
 
-  // RESPOND IMMEDIATELY — don't make the client wait for bill/kitchen creation
+  // Create bill and kitchen bill
+  const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const [newBill, kitchenBill] = await Promise.all([
+    Bill.create({
+      orderRef: createdOrder._id,
+      table: createdOrder.table,
+      hasTakeaway: createdOrder.hasTakeaway,
+      customerName: createdOrder.customerName,
+      customerAddress: createdOrder.customerAddress,
+      deliveryTime: createdOrder.deliveryTime,
+      items: createdOrder.items,
+      totalAmount: createdOrder.totalAmount,
+      status: createdOrder.status,
+      paymentMethod: createdOrder.paymentMethod,
+      paymentStatus: createdOrder.paymentStatus,
+      paymentId: createdOrder.paymentId,
+      paymentSessions: createdOrder.paymentSessions,
+      notes: createdOrder.notes,
+      billDetails: createdOrder.billDetails,
+      billedAt: createdOrder.createdAt,
+    }),
+    KitchenBill.create({
+      orderRef: createdOrder._id,
+      batchNumber: 1,
+      table: createdOrder.table,
+      hasTakeaway: createdOrder.hasTakeaway,
+      customerName: createdOrder.customerName,
+      customerAddress: createdOrder.customerAddress,
+      deliveryTime: createdOrder.deliveryTime,
+      items: createdOrder.items,
+      batchTotal: batchTotal,
+      status: createdOrder.status,
+      notes: createdOrder.notes,
+    }),
+  ]);
+
+  // BROADCAST IMMEDIATELY
+  const io = req.app.get("io");
+  if (io) {
+    if (newBill) io.emit("billCreated", newBill);
+    if (createdOrder) io.emit("orderCreated", createdOrder);
+    if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+  }
+
+  // RESPOND with created order
   res.status(201).json(createdOrder);
-
-  // Fire-and-forget: create bill, kitchen bill, emit socket events in background
-  (async () => {
-    try {
-      const io = req.app.get("io");
-      if (io) io.emit("orderCreated", createdOrder);
-
-      // Create bill and kitchen bill in parallel
-      const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-
-      const [newBill, kitchenBill] = await Promise.all([
-        Bill.create({
-          orderRef: createdOrder._id,
-          table: createdOrder.table,
-          hasTakeaway: createdOrder.hasTakeaway,
-          customerName: createdOrder.customerName,
-          customerAddress: createdOrder.customerAddress,
-          deliveryTime: createdOrder.deliveryTime,
-          items: createdOrder.items,
-          totalAmount: createdOrder.totalAmount,
-          status: createdOrder.status,
-          paymentMethod: createdOrder.paymentMethod,
-          paymentStatus: createdOrder.paymentStatus,
-          paymentId: createdOrder.paymentId,
-          paymentSessions: createdOrder.paymentSessions,
-          notes: createdOrder.notes,
-          billDetails: createdOrder.billDetails,
-          billedAt: createdOrder.createdAt,
-        }),
-        KitchenBill.create({
-          orderRef: createdOrder._id,
-          batchNumber: 1,
-          table: createdOrder.table,
-          hasTakeaway: createdOrder.hasTakeaway,
-          customerName: createdOrder.customerName,
-          customerAddress: createdOrder.customerAddress,
-          deliveryTime: createdOrder.deliveryTime,
-          items: createdOrder.items,
-          batchTotal: batchTotal,
-          status: createdOrder.status,
-          notes: createdOrder.notes,
-        }),
-      ]);
-
-      if (io) {
-        if (newBill) io.emit("billCreated", newBill);
-        if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
-      }
-    } catch (err) {
-      console.error("Background bill/kitchen creation error:", err);
-    }
-  })();
 };
 
 // @desc    Get order by ID
