@@ -16,6 +16,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const subItemRoutes = require("./routes/subItemRoutes");
 const tableRoutes = require("./routes/tableRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const reservationRoutes = require("./routes/reservationRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -127,6 +128,7 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/sub-items", subItemRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/reservations", reservationRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
