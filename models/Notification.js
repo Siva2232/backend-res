@@ -9,7 +9,7 @@ const notificationSchema = mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ['WaiterCall', 'BillRequest', 'Other'],
+      enum: ['WaiterCall', 'BillRequest', 'BillRequested', 'Other'],
       default: 'WaiterCall',
     },
     status: {
