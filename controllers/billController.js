@@ -38,32 +38,27 @@ const getBills = async (req, res) => {
       filter.billedAt = { $gte: fromDate };
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 40, 100);
 
     let bills;
-    try {
-      // Optimized query: only fetch non-closed bills or very recent closed ones
-      const query = { ...filter };
-      if (!req.query.today && !req.query.from) {
-        query.$or = [{ status: { $ne: "Closed" } }, { billedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }];
-      }
-
-      bills = await Bill.find(query)
-        .sort({ billedAt: -1, _id: -1 })
-        .limit(limit)
-        .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
-        .lean();
-    } catch (firstErr) {
-      // retry once on transient network errors
-      console.warn("getBills first attempt failed, retrying...", firstErr.message);
-      bills = await Bill.find(filter)
-        .sort({ billedAt: -1, _id: -1 })
-        .limit(limit)
-        .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
-        .lean();
+    // Optimized query: only fetch non-closed bills or very recent closed ones
+    const query = { ...filter };
+    if (!req.query.today && !req.query.from) {
+      // Fetch active bills (not Closed) OR recent closed bills (last 12 hours for performance)
+      query.$or = [
+        { status: { $ne: "Closed" } }, 
+        { billedAt: { $gte: new Date(Date.now() - 12 * 60 * 60 * 1000) } }
+      ];
     }
 
-    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=10');
+    bills = await Bill.find(query)
+      .sort({ billedAt: -1, _id: -1 })
+      .limit(limit)
+      .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
+      .lean();
+
+    // Cache headers for better performance
+    res.set('Cache-Control', 'private, max-age=15, stale-while-revalidate=10');
     res.json(bills);
   } catch (error) {
     console.error("getBills error:", error);
