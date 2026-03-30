@@ -102,6 +102,9 @@ const addOrderItems = async (req, res) => {
       grandTotal: newGrandTotal,
     };
     
+    // Reset bill request state when new items are added to an existing order
+    existingOrder.isBillRequested = false;
+    
     if (notes) existingOrder.notes = (existingOrder.notes ? existingOrder.notes + " | " : "") + notes;
     
     // Update customer info if provided and was missing
@@ -152,6 +155,9 @@ const addOrderItems = async (req, res) => {
             bill.hasTakeaway = updatedOrder.hasTakeaway;
             bill.notes = updatedOrder.notes;
             bill.paymentSessions = updatedOrder.paymentSessions;
+
+            // Reset bill request state on the existing bill as well
+            bill.isBillRequested = false;
             
             const allPaid = bill.paymentSessions.every(s => s.status === "paid");
             const anyPaid = bill.paymentSessions.some(s => s.status === "paid");
@@ -334,9 +340,20 @@ const updateOrderStatus = async (req, res) => {
     return res.status(404).json({ message: "Order not found" });
   }
 
-  const newStatus = req.body.status || order.status;
-  order.status = newStatus;
+  const { status, isBillRequested } = req.body;
+  
+  if (status) order.status = status;
+  if (isBillRequested !== undefined) order.isBillRequested = isBillRequested;
+  
   const updatedOrder = await order.save();
+
+  // Sync with bill state
+  if (isBillRequested !== undefined) {
+    await Bill.updateMany(
+      { orderRef: order._id },
+      { $set: { isBillRequested: isBillRequested } }
+    );
+  }
 
   // When an order is closed, also mark the related bills as Closed.
   // This ensures admin order list and customer summary remain consistent
