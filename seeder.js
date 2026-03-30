@@ -63,37 +63,9 @@ const categories = [
   { name: "Beverages" },
 ];
 
-const banners = [
-  {
-    title: "Grand Opening",
-    description: "Celebrate with us! Complimentary dessert.",
-    imageUrl: "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b",
-    tag: "New",
-  },
-  {
-    title: "Happy Hours",
-    description: "50% off beverages between 4‑6pm.",
-    imageUrl: "https://images.unsplash.com/photo-1640777291247-0b2b1d3f3d26",
-    tag: "Drinks",
-  },
-];
+const banners = [];
 
-const offers = [
-  {
-    title: "10% Off Burgers",
-    description: "Use code BURGER10",
-    imageUrl: "https://images.unsplash.com/photo-1550547660-d9450f859349",
-    tag: "Burger Deal",
-    isPublished: true,
-  },
-  {
-    title: "Free Fries",
-    description: "With any large pizza",
-    imageUrl: "https://images.unsplash.com/photo-1601924582975-7e1f52fbb06c",
-    tag: "Pizza Special",
-    isPublished: true,
-  },
-];
+const offers = [];
 
 const importData = async () => {
   try {
