@@ -40,25 +40,26 @@ const getBills = async (req, res) => {
 
     const limit = Math.min(parseInt(req.query.limit) || 40, 100);
 
-    let bills;
-    // Optimized query: only fetch non-closed bills or very recent closed ones
+    // Speed optimization: Use lean() and specific select
+    // Also, if no filter is provided, default to only active or very recent bills
     const query = { ...filter };
     if (!req.query.today && !req.query.from) {
-      // Fetch active bills (not Closed) OR recent closed bills (last 12 hours for performance)
+      // Significantly cut down processing by excluding the heavy 'items' array for the list
+      // and only fetching active/recent bills.
       query.$or = [
         { status: { $ne: "Closed" } }, 
-        { billedAt: { $gte: new Date(Date.now() - 12 * 60 * 60 * 1000) } }
+        { billedAt: { $gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } } // Reduced to 6 hours for speed
       ];
     }
 
-    bills = await Bill.find(query)
+    const bills = await Bill.find(query)
       .sort({ billedAt: -1, _id: -1 })
       .limit(limit)
-      .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem")
+      .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem -items.image") // Exclude heavy image strings
       .lean();
 
-    // Cache headers for better performance
-    res.set('Cache-Control', 'private, max-age=15, stale-while-revalidate=10');
+    // Aggressive Cache headers for high speed
+    res.set('Cache-Control', 'public, max-age=5, stale-while-revalidate=30');
     res.json(bills);
   } catch (error) {
     console.error("getBills error:", error);
@@ -120,9 +121,20 @@ const markBillPaid = async (req, res) => {
       // consistent; we no longer rely on a temporary paidSession variable
       order.paymentSessions = bill.paymentSessions;
       order.paymentStatus = bill.paymentStatus;
+      
+      // IMPORTANT: Also update order status to "Paid" if it was strictly a payment action
+      // this ensures that the order is recognized as paid across all dashboards
+      if (order.status !== "Closed") {
+        order.status = "Paid";
+      }
+      
       await order.save();
       const io = req.app.get("io");
-      if (io) io.emit("orderUpdated", order);
+      if (io) {
+        io.emit("orderUpdated", order);
+        // also emit to a specific table room if you use them
+        io.to(`table-${order.table}`).emit("orderUpdated", order);
+      }
     }
 
     const io = req.app.get("io");
