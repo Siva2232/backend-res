@@ -1,7 +1,8 @@
 const Offer = require("../models/Offer");
 
 const getOffers = async (req, res) => {
-  res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  // Increase cache-control for better performance, leveraging stale-while-revalidate for background updates
+  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
   const offers = await Offer.find({ isPublished: true }).select(
     "title description imageUrl tag"
   ).lean();
