@@ -102,7 +102,7 @@ const importData = async () => {
     const waiterUser = await User.create({
       name: "Waiter",
       email: "waiter@demo.com",
-      password: "waiter123",
+      password: "password123",
       isAdmin: false,
       isKitchen: false,
       isWaiter: true,
