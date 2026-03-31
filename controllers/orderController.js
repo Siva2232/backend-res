@@ -295,9 +295,21 @@ const addOrderItems = async (req, res) => {
   const order = new Order(orderData);
   const createdOrder = await order.save();
 
-  // Create bill and kitchen bill
+  // BROADCAST ORDER IMMEDIATELY after save — don't wait for bill/kitchen creation
+  // This removes the 3-5s delay caused by waiting for Bill + KitchenBill DB writes
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("orderCreated", createdOrder);
+  }
+
+  // RESPOND immediately so the client gets the token without waiting
+  res.status(201).json(createdOrder);
+
+  // Create bill and kitchen bill in the background (fire-and-forget)
   const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const [newBill, kitchenBill] = await Promise.all([
+  (async () => {
+    try {
+      const [newBill, kitchenBill] = await Promise.all([
     Bill.create({
       orderRef: createdOrder._id,
       table: createdOrder.table,
@@ -333,18 +345,16 @@ const addOrderItems = async (req, res) => {
       status: createdOrder.status,
       notes: createdOrder.notes,
     }),
-  ]);
+    ]);
 
-  // BROADCAST IMMEDIATELY
-  const io = req.app.get("io");
-  if (io) {
-    if (newBill) io.emit("billCreated", newBill);
-    if (createdOrder) io.emit("orderCreated", createdOrder);
-    if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
-  }
-
-  // RESPOND with created order
-  res.status(201).json(createdOrder);
+      if (io) {
+        if (newBill) io.emit("billCreated", newBill);
+        if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+      }
+    } catch (bgErr) {
+      console.error("Background bill/kitchen creation error:", bgErr);
+    }
+  })();
 };
 
 // @desc    Get order by ID
