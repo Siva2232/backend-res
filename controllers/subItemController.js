@@ -104,44 +104,39 @@ const updateSubItem = async (req, res) => {
       { returnDocument: "after", runValidators: true }
     );
 
-    // Sync with existing products
+    // Sync with existing products 
     // If availability changed or name/price changed, we need to reflect that in all products that use this library item
-    if (isAvailable !== undefined || name || price !== undefined || addons) {
+    if (isAvailable !== undefined || name || price !== undefined || addons || maxSelections !== undefined) {
       const oldName = originalItem.name;
       const newName = (name && name.trim()) || oldName;
 
       // 1. Handle Portions
       if (originalItem.type === "portion") {
-        if (isAvailable !== undefined) {
-          // Sync availability without removing the item
+        const updateFields = {};
+        if (isAvailable !== undefined) updateFields["portions.$.isAvailable"] = isAvailable;
+        if (name) updateFields["portions.$.name"] = newName;
+        if (price !== undefined) updateFields["portions.$.price"] = Number(price);
+
+        if (Object.keys(updateFields).length > 0) {
           await Product.updateMany(
             { "portions.name": oldName },
-            { $set: { "portions.$.isAvailable": isAvailable } }
-          );
-        }
-        if (name || price !== undefined) {
-          // Update name/price
-          await Product.updateMany(
-            { "portions.name": oldName },
-            { $set: { "portions.$.name": newName, "portions.$.price": Number(price) || (originalItem.price ?? 0) } }
+            { $set: updateFields }
           );
         }
       }
 
       // 2. Handle Addon Groups
       if (originalItem.type === "addonGroup") {
-        if (isAvailable !== undefined) {
-          // Sync availability without removing the group
+        const updateFields = {};
+        if (isAvailable !== undefined) updateFields["addonGroups.$.isAvailable"] = isAvailable;
+        if (name) updateFields["addonGroups.$.name"] = newName;
+        if (maxSelections !== undefined) updateFields["addonGroups.$.maxSelections"] = Number(maxSelections);
+        if (addons !== undefined) updateFields["addonGroups.$.addons"] = addons;
+
+        if (Object.keys(updateFields).length > 0) {
           await Product.updateMany(
             { "addonGroups.name": oldName },
-            { $set: { "addonGroups.$.isAvailable": isAvailable } }
-          );
-        }
-        if (name) {
-          // Update name
-          await Product.updateMany(
-            { "addonGroups.name": oldName },
-            { $set: { "addonGroups.$.name": newName } }
+            { $set: updateFields }
           );
         }
       }
@@ -149,6 +144,7 @@ const updateSubItem = async (req, res) => {
       // Broadcast update to all clients to refresh products instantly
       const io = req.app.get('io');
       if (io) {
+        io.emit('subItemUpdated', updated);
         io.emit('productsUpdated');
         io.emit('subItemsUpdated');
       }
@@ -167,19 +163,28 @@ const deleteSubItem = async (req, res) => {
     const item = await SubItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: "Sub-item not found" });
 
-    // Sync: Remove from all products before deleting from library
+    // Sync: Remove/Update from all products before deleting from library
     const oldName = item.name;
-    if (item.type === "portion") {
-      await Product.updateMany({}, { $pull: { portions: { name: oldName } } });
+    const type = item.type;
+    
+    if (type === "portion") {
+      await Product.updateMany(
+        { "portions.name": oldName },
+        { $pull: { portions: { name: oldName } } }
+      );
     } else {
-      await Product.updateMany({}, { $pull: { addonGroups: { name: oldName } } });
+      await Product.updateMany(
+        { "addonGroups.name": oldName },
+        { $pull: { addonGroups: { name: oldName } } }
+      );
     }
 
     await item.deleteOne();
 
-    // Broadcast update
+    // Broadcast update to all clients to refresh products instantly
     const io = req.app.get('io');
     if (io) {
+      io.emit('subItemDeleted', { id: req.params.id, type, name: oldName });
       io.emit('productsUpdated');
       io.emit('subItemsUpdated');
     }
@@ -190,4 +195,42 @@ const deleteSubItem = async (req, res) => {
   }
 };
 
-module.exports = { getSubItems, createSubItem, updateSubItem, deleteSubItem };
+const updateSubItemStatus = async (req, res) => {
+  try {
+    const { isAvailable } = req.body;
+    const item = await SubItem.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: "Sub-item not found" });
+
+    const updated = await SubItem.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isAvailable } },
+      { returnDocument: "after" }
+    );
+
+    const oldName = item.name;
+    if (item.type === "portion") {
+      await Product.updateMany(
+        { "portions.name": oldName },
+        { $set: { "portions.$.isAvailable": isAvailable } }
+      );
+    } else {
+      await Product.updateMany(
+        { "addonGroups.name": oldName },
+        { $set: { "addonGroups.$.isAvailable": isAvailable } }
+      );
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('subItemUpdated', updated);
+      io.emit('productsUpdated');
+      io.emit('subItemsUpdated');
+    }
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getSubItems, createSubItem, updateSubItem, deleteSubItem, updateSubItemStatus };

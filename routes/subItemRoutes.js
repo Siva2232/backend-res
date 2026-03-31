@@ -5,10 +5,12 @@ const {
   createSubItem,
   updateSubItem,
   deleteSubItem,
+  updateSubItemStatus,
 } = require("../controllers/subItemController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
 router.route("/").get(getSubItems).post(protect, admin, createSubItem);
 router.route("/:id").put(protect, admin, updateSubItem).delete(protect, admin, deleteSubItem);
+router.route("/:id/status").patch(protect, admin, updateSubItemStatus);
 
 module.exports = router;
