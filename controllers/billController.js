@@ -155,11 +155,21 @@ const closeBill = async (req, res) => {
     if (!bill) return res.status(404).json({ message: "Bill not found" });
 
     // A bill can only be closed if it's paid
+    // Adding a small check: if status is already closed, just return it
+    if (bill.status === "Closed") {
+      return res.json(bill);
+    }
+
     if (bill.paymentStatus !== "paid") {
       return res.status(400).json({ message: "Cannot close an unpaid bill" });
     }
 
     bill.status = "Closed";
+    // Also ensure bill's internal paymentSessions match the paid state
+    if (bill.paymentSessions && bill.paymentSessions.length > 0) {
+      bill.paymentSessions = bill.paymentSessions.map(s => ({ ...s, status: 'paid' }));
+    }
+    
     await bill.save();
 
     // Sync order
@@ -167,9 +177,18 @@ const closeBill = async (req, res) => {
     const order = await Order.findById(bill.orderRef);
     if (order) {
       order.status = "Closed";
+      // Also update order payment status if it wasn't already
+      order.paymentStatus = "paid";
+      if (order.paymentSessions && order.paymentSessions.length > 0) {
+        order.paymentSessions = order.paymentSessions.map(s => ({ ...s, status: 'paid' }));
+      }
       await order.save();
+      
       const io = req.app.get("io");
-      if (io) io.emit("orderUpdated", order);
+      if (io) {
+        io.emit("orderUpdated", order);
+        io.to(`table-${order.table}`).emit("orderUpdated", order);
+      }
     }
 
     const io = req.app.get("io");
