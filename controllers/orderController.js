@@ -5,6 +5,11 @@ const Settings = require("../models/Settings");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+// ── In-memory cache to avoid a DB hit on every token / stats request ──────────
+let _cachedTokenResetAt = null; // updated when resetTokenCount is called
+let _statsCache = null;
+let _statsCacheExpiry = 0; // epoch ms
+
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Public
@@ -448,6 +453,10 @@ const resetTokenCount = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // Invalidate in-memory cache so getTokens picks up the new reset time
+    _cachedTokenResetAt = now.toISOString();
+    _statsCache = null; // also bust stats cache
+
     // 3. Emit socket event so all connected frontends refresh instantly
     const io = req.app.get("io");
     if (io) io.emit("tokenReset", { resetAt: now.toISOString() });
@@ -467,11 +476,19 @@ const getTokens = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Fetch the current session start time
-    const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
-    const resetAt = resetSetting ? new Date(resetSetting.value) : null;
-    // Show tokens from the current session only (after last reset, within today)
-    const since = (resetAt && resetAt > today) ? resetAt : today;
+    // Use in-memory cached resetAt to avoid Settings DB hit on every request
+    // The cache is invalidated by resetTokenCount (same process)
+    let since;
+    if (_cachedTokenResetAt !== null) {
+      const resetAt = new Date(_cachedTokenResetAt);
+      since = (resetAt > today) ? resetAt : today;
+    } else {
+      // First cold call: fetch from DB and cache it
+      const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
+      _cachedTokenResetAt = resetSetting ? resetSetting.value : null;
+      const resetAt = _cachedTokenResetAt ? new Date(_cachedTokenResetAt) : null;
+      since = (resetAt && resetAt > today) ? resetAt : today;
+    }
 
     const tokens = await Order.find({
       isTakeawayOrder: true,
@@ -483,6 +500,7 @@ const getTokens = async (req, res) => {
       .sort({ tokenNumber: -1 })
       .lean();
 
+    res.set('Cache-Control', 'private, max-age=8');
     res.json({ tokens, resetAt: since.toISOString() });
   } catch (error) {
     console.error("getTokens error:", error);
@@ -556,6 +574,62 @@ const addManualOrder = async (req, res) => {
   return addOrderItems(req, res);
 };
 
+// @desc    Get aggregated dashboard stats (today count + revenue + best sellers) in one shot
+// @route   GET /api/orders/stats
+// @access  Private/Admin
+const getOrderStats = async (req, res) => {
+  try {
+    const now = Date.now();
+
+    // Serve from in-memory cache if fresh (30s TTL for low DB pressure)
+    if (_statsCache && now < _statsCacheExpiry) {
+      res.set('Cache-Control', 'private, max-age=30');
+      return res.json(_statsCache);
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    // Run today-count and all-time revenue+sellers in parallel
+    const [todayCount, revenueAgg] = await Promise.all([
+      Order.countDocuments({ createdAt: { $gte: startOfDay } }),
+      Order.aggregate([
+        { $match: { status: { $in: ["Paid", "Closed"] } } },
+        { $group: {
+            _id: null,
+            totalRevenue: { $sum: "$billDetails.grandTotal" },
+            totalRevenueFallback: { $sum: "$totalAmount" }
+        }},
+      ]),
+    ]);
+
+    // Best sellers: unwind items → group by name → sort
+    const sellersAgg = await Order.aggregate([
+      { $match: { status: { $in: ["Paid", "Closed"] } } },
+      { $unwind: "$items" },
+      { $group: { _id: "$items.name", qty: { $sum: "$items.qty" } } },
+      { $sort: { qty: -1 } },
+      { $limit: 5 },
+      { $project: { _id: 0, name: "$_id", qty: 1 } },
+    ]);
+
+    const revRow = revenueAgg[0] || {};
+    const totalRevenue = revRow.totalRevenue || revRow.totalRevenueFallback || 0;
+
+    const stats = { todayCount, totalRevenue, bestSellers: sellersAgg };
+
+    // Store in memory cache for 30s
+    _statsCache = stats;
+    _statsCacheExpiry = now + 30000;
+
+    res.set('Cache-Control', 'private, max-age=30');
+    res.json(stats);
+  } catch (error) {
+    console.error("getOrderStats error:", error);
+    res.status(500).json({ message: "Server error fetching stats" });
+  }
+};
+
 module.exports = {
   addOrderItems,
   addManualOrder,
@@ -565,4 +639,5 @@ module.exports = {
   getTableOrders,
   resetTokenCount,
   getTokens,
+  getOrderStats,
 };

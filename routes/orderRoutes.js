@@ -9,12 +9,10 @@ const {
   getTableOrders,
   resetTokenCount,
   getTokens,
+  getOrderStats,
 } = require("../controllers/orderController");
 const { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter } = require("../middleware/authMiddleware");
 
-// orders list is now available to kitchen users as well; unauthorized
-// clients will receive 403 instead of 401 (which previously caused the
-// frontend to clear the login state and force a logout).
 router
   .route("/")
   .post(addOrderItems)
@@ -22,6 +20,8 @@ router
 
 router.route("/tokens").get(protect, adminOrKitchenOrWaiter, getTokens);
 router.route("/reset-tokens").post(protect, admin, resetTokenCount);
+// Aggregated dashboard stats — single fast endpoint
+router.route("/stats").get(protect, admin, getOrderStats);
 
 // dedicated manual-order endpoint, requires auth
 router.post("/manual", protect, admin, addManualOrder);
