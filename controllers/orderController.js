@@ -31,6 +31,7 @@ const addOrderItems = async (req, res) => {
   }
 
   const tableNo = table && table.trim() ? table : "TAKEAWAY";
+  const isTakeawayOrder = tableNo === "TAKEAWAY";
 
   // ONLY MERGE if existingOrderId is provided and it is still ACTIVE
   let existingOrder = null;
@@ -114,6 +115,9 @@ const addOrderItems = async (req, res) => {
     // Update hasTakeaway flag if provided (can upgrade dine-in to dine-in+takeaway)
     if (hasTakeaway) existingOrder.hasTakeaway = true;
 
+    // Set isTakeawayOrder flag if it's a takeaway order
+    if (isTakeawayOrder) existingOrder.isTakeawayOrder = true;
+
     // Track payment session for this specific batch
     const currentBatchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const batchGrandTotal = currentBatchTotal * 1.05; // Incl 5% GST for this batch
@@ -153,6 +157,8 @@ const addOrderItems = async (req, res) => {
             bill.customerAddress = updatedOrder.customerAddress;
             bill.deliveryTime = updatedOrder.deliveryTime;
             bill.hasTakeaway = updatedOrder.hasTakeaway;
+            bill.isTakeawayOrder = updatedOrder.isTakeawayOrder;
+            bill.tokenNumber = updatedOrder.tokenNumber;
             bill.notes = updatedOrder.notes;
             bill.paymentSessions = updatedOrder.paymentSessions;
 
@@ -189,6 +195,8 @@ const addOrderItems = async (req, res) => {
             batchNumber: nextBatchNumber,
             table: updatedOrder.table,
             hasTakeaway: updatedOrder.hasTakeaway,
+            isTakeawayOrder: updatedOrder.isTakeawayOrder,
+            tokenNumber: updatedOrder.tokenNumber,
             customerName: updatedOrder.customerName,
             customerAddress: updatedOrder.customerAddress,
             deliveryTime: updatedOrder.deliveryTime,
@@ -221,6 +229,20 @@ const addOrderItems = async (req, res) => {
   }
 
   // If no existing active order, create a new one
+  let tokenNumber;
+  if (isTakeawayOrder) {
+    // Generate a simple token number based on today's count or just random
+    // For simplicity, let's use a 4 digit random number or sequence
+    // A better way would be count orders for today + 1
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const count = await Order.countDocuments({
+      isTakeawayOrder: true,
+      createdAt: { $gte: today },
+    });
+    tokenNumber = count + 1;
+  }
+
   const orderData = {
     items: orderItems.map((x) => ({
       ...x,
@@ -241,6 +263,8 @@ const addOrderItems = async (req, res) => {
     customerAddress,
     deliveryTime,
     hasTakeaway: hasTakeaway || false, // Include takeaway flag for dine-in orders
+    isTakeawayOrder: isTakeawayOrder,
+    tokenNumber: tokenNumber,
     paymentSessions: [
       {
         method: paymentMethod || "cod",
@@ -276,6 +300,8 @@ const addOrderItems = async (req, res) => {
       orderRef: createdOrder._id,
       table: createdOrder.table,
       hasTakeaway: createdOrder.hasTakeaway,
+      isTakeawayOrder: createdOrder.isTakeawayOrder,
+      tokenNumber: createdOrder.tokenNumber,
       customerName: createdOrder.customerName,
       customerAddress: createdOrder.customerAddress,
       deliveryTime: createdOrder.deliveryTime,
@@ -295,6 +321,8 @@ const addOrderItems = async (req, res) => {
       batchNumber: 1,
       table: createdOrder.table,
       hasTakeaway: createdOrder.hasTakeaway,
+      isTakeawayOrder: createdOrder.isTakeawayOrder,
+      tokenNumber: createdOrder.tokenNumber,
       customerName: createdOrder.customerName,
       customerAddress: createdOrder.customerAddress,
       deliveryTime: createdOrder.deliveryTime,
@@ -414,7 +442,7 @@ const getOrders = async (req, res) => {
 
     // optimization: only fetch necessary fields for the order list
     const orders = await Order.find(filter)
-      .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price')
+      .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price items.image isTakeawayOrder tokenNumber')
       .sort({ createdAt: -1 })
       .skip(skip > 0 ? skip : 0)
       .limit(limit > 200 ? 200 : limit)

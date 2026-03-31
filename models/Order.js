@@ -62,6 +62,10 @@ const orderSchema = mongoose.Schema(
         addedAt: { type: Date, default: Date.now },
       },
     ],
+    // token number for takeaway orders
+    tokenNumber: { type: Number },
+    // indicator if the order is primarily takeaway
+    isTakeawayOrder: { type: Boolean, default: false },
     // optional kitchen notes from customer
     notes: { type: String },
     // computed billing details (subtotal, cgst, sgst, grandTotal)

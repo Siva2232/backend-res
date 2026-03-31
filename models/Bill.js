@@ -53,6 +53,10 @@ const billSchema = mongoose.Schema(
         addedAt: { type: Date, default: Date.now },
       }
     ],
+    // token number for takeaway orders
+    tokenNumber: { type: Number },
+    // indicator if the order is primarily takeaway
+    isTakeawayOrder: { type: Boolean, default: false },
     notes: { type: String },
     billDetails: {
       subtotal: { type: Number },
