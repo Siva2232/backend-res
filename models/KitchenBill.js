@@ -22,6 +22,10 @@ const kitchenBillSchema = mongoose.Schema(
     customerName: { type: String },
     customerAddress: { type: String },
     deliveryTime: { type: String },
+    // token number for takeaway orders
+    tokenNumber: { type: Number },
+    // indicator if the order is primarily takeaway
+    isTakeawayOrder: { type: Boolean, default: false },
     // ONLY the items in this batch (not all items in the order)
     items: [
       {
