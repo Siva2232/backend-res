@@ -86,5 +86,9 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ waiter: 1 });
+// compound index for the token board query (isTakeawayOrder + createdAt)
+orderSchema.index({ isTakeawayOrder: 1, createdAt: -1 });
+// compound index for stats aggregation
+orderSchema.index({ status: 1, "items.name": 1 });
 
 module.exports = mongoose.model("Order", orderSchema);
