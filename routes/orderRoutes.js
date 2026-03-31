@@ -7,6 +7,8 @@ const {
   updateOrderStatus,
   getOrders,
   getTableOrders,
+  resetTokenCount,
+  getTokens,
 } = require("../controllers/orderController");
 const { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter } = require("../middleware/authMiddleware");
 
@@ -17,6 +19,9 @@ router
   .route("/")
   .post(addOrderItems)
   .get(protect, adminOrKitchenOrWaiter, getOrders);
+
+router.route("/tokens").get(protect, adminOrKitchenOrWaiter, getTokens);
+router.route("/reset-tokens").post(protect, admin, resetTokenCount);
 
 // dedicated manual-order endpoint, requires auth
 router.post("/manual", protect, admin, addManualOrder);

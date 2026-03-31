@@ -1,6 +1,7 @@
 const Order = require("../models/Order");
 const Bill = require("../models/Bill");
 const KitchenBill = require("../models/KitchenBill");
+const Settings = require("../models/Settings");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
@@ -231,16 +232,17 @@ const addOrderItems = async (req, res) => {
   // If no existing active order, create a new one
   let tokenNumber;
   if (isTakeawayOrder) {
-    // Generate a simple token number based on today's count or just random
-    // For simplicity, let's use a 4 digit random number or sequence
-    // A better way would be count orders for today + 1
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    // Respect manual reset: count only orders created after the last reset (or start of day)
+    const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
+    const resetAt = resetSetting ? new Date(resetSetting.value) : null;
+    const since = (resetAt && resetAt > today) ? resetAt : today;
     const count = await Order.countDocuments({
       isTakeawayOrder: true,
-      createdAt: { $gte: today },
+      createdAt: { $gte: since },
     });
-    tokenNumber = count + 1;
+    tokenNumber = count + 101; // start takeaway token sequence from 101
   }
 
   const orderData = {
@@ -386,19 +388,17 @@ const updateOrderStatus = async (req, res) => {
   // When an order is closed, also mark the related bills as Closed.
   // This ensures admin order list and customer summary remain consistent
   // after reload/polling.
-  if (newStatus === "Closed") {
+  if (status === "Closed") {
     try {
-      const updated = await Bill.updateMany(
+      await Bill.updateMany(
         { orderRef: order._id },
         { $set: { status: "Closed" } }
       );
       // emit billUpdated events for any changed bills
-      if (updated.modifiedCount > 0) {
-        const bills = await Bill.find({ orderRef: order._id });
-        const io = req.app.get('io');
-        if (io) {
-          bills.forEach((bill) => io.emit('billUpdated', bill));
-        }
+      const bills = await Bill.find({ orderRef: order._id });
+      const io = req.app.get('io');
+      if (io) {
+        bills.forEach((bill) => io.emit('billUpdated', bill));
       }
     } catch (billError) {
       console.error("Failed to update related bill status:", billError);
@@ -413,6 +413,71 @@ const updateOrderStatus = async (req, res) => {
   }
 
   res.json(updatedOrder);
+};
+
+const resetTokenCount = async (req, res) => {
+  try {
+    const now = new Date();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. Close all currently active takeaway tokens so the board clears
+    await Order.updateMany(
+      {
+        isTakeawayOrder: true,
+        status: { $in: ["Pending", "New", "Preparing", "Ready"] },
+        createdAt: { $gte: today },
+      },
+      { $set: { status: "Closed" } }
+    );
+
+    // 2. Persist the reset timestamp — new tokens will count from now
+    await Settings.findOneAndUpdate(
+      { key: "tokenResetAt" },
+      { value: now.toISOString() },
+      { upsert: true, new: true }
+    );
+
+    // 3. Emit socket event so all connected frontends refresh instantly
+    const io = req.app.get("io");
+    if (io) io.emit("tokenReset", { resetAt: now.toISOString() });
+
+    res.json({ message: "Token counter reset successfully", resetAt: now.toISOString() });
+  } catch (error) {
+    console.error("resetTokenCount error:", error);
+    res.status(500).json({ message: "Failed to reset tokens" });
+  }
+};
+
+// @desc    Get takeaway tokens for the token board
+// @route   GET /api/orders/tokens
+// @access  Private/Admin
+const getTokens = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Fetch the current session start time
+    const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
+    const resetAt = resetSetting ? new Date(resetSetting.value) : null;
+    // Show tokens from the current session only (after last reset, within today)
+    const since = (resetAt && resetAt > today) ? resetAt : today;
+
+    const tokens = await Order.find({
+      isTakeawayOrder: true,
+      tokenNumber: { $exists: true },
+      createdAt: { $gte: since, $lt: new Date(today.getTime() + 86400000) },
+      status: { $ne: "Cancelled" },
+    })
+      .select("table status totalAmount createdAt customerName items.name items.qty items.price items.image isTakeawayOrder tokenNumber")
+      .sort({ tokenNumber: -1 })
+      .lean();
+
+    res.json({ tokens, resetAt: since.toISOString() });
+  } catch (error) {
+    console.error("getTokens error:", error);
+    res.status(500).json({ message: "Server error fetching tokens" });
+  }
 };
 
 // @desc    Get all orders
@@ -488,4 +553,6 @@ module.exports = {
   updateOrderStatus,
   getOrders,
   getTableOrders,
+  resetTokenCount,
+  getTokens,
 };
