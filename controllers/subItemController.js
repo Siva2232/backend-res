@@ -40,10 +40,13 @@ const createSubItem = async (req, res) => {
           if (type === "portion") {
             payload.price = Number(item.price) || 0;
           } else if (type === "addonGroup") {
-            // Bulk adding addon groups from library uses the item price as a default price field if provided
-            // or we just initialize an empty group with that name
-            payload.price = Number(item.price) || 0;
-            payload.addons = [];
+            // Bulk adding addon groups from library:
+            // "item" in the bulk loop represents a single row from the modal.
+            // The user enters name (e.g. "Ketchup") and price (e.g. 10).
+            // This should be an addon entry INSIDE the group.
+            payload.name = category.trim(); // The group name is the bulk category
+            payload.category = ""; // Clear category so it doesn't group itself
+            payload.addons = [{ name: item.name.trim(), price: Number(item.price) || 0 }];
             payload.maxSelections = 0;
           }
 
