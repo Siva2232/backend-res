@@ -22,6 +22,7 @@ const createTransporter = (port) => {
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 45000,
+    family: 4, // force IPv4 transport (avoid ENETUNREACH IPv6 issues on Render)
   });
 };
 
