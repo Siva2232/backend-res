@@ -70,18 +70,7 @@ const markAttendance = async (req, res) => {
       const { staff, date, status, checkIn, checkOut, note } = entry;
       if (!staff || !date) continue;
 
-      const { start } = dayRange(date);
-
-      // Check if attendance already exists for this staff and date
-      const existing = await HRAttendance.findOne({ staff, date: { $gte: start } });
-      if (existing && existing.checkIn) {
-        // If it was marked by a staff (not an admin or system auto-mark)
-        if (existing.markedBy && String(existing.markedBy) === String(staff)) {
-          // If already marked, push the record and skip update
-          results.push(existing.populate('staff', 'name email'));
-          continue;
-        }
-      }
+      const { start, end } = dayRange(date);
 
       // Calculate work hours if both checkIn and checkOut provided
       let workHours = 0;
@@ -93,7 +82,7 @@ const markAttendance = async (req, res) => {
       }
 
       const record = await HRAttendance.findOneAndUpdate(
-        { staff, date: { $gte: new Date(start) } },
+        { staff, date: { $gte: start, $lte: end } },
         { staff, date: start, status: status || 'present', checkIn, checkOut, workHours, note,
           markedBy: req.hrStaff?._id || req.user?._id },
         { upsert: true, new: true, runValidators: true }
@@ -297,11 +286,10 @@ const locationAttendance = async (req, res) => {
     const staff = staffId;
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
-    const { start } = dayRange(dateStr);
+    const { start, end } = dayRange(dateStr);
     const checkTime =
       now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-
-    const existing = await HRAttendance.findOne({ staff, date: { $gte: start } });
+    const existing = await HRAttendance.findOne({ staff, date: { $gte: start, $lte: end } });
 
     let update = {
       staff,
@@ -323,7 +311,7 @@ const locationAttendance = async (req, res) => {
     }
 
     const record = await HRAttendance.findOneAndUpdate(
-      { staff, date: { $gte: start } },
+      { staff, date: { $gte: start, $lte: end } },
       update,
       { upsert: true, new: true }
     ).populate('staff', 'name email');
