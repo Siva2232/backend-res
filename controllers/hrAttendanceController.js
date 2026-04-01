@@ -1,5 +1,20 @@
 const HRAttendance = require('../models/HRAttendance');
 const HRStaff = require('../models/HRStaff');
+const Settings = require('../models/Settings');
+
+// Haversine distance in metres between two lat/lng points
+const haversineMetres = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
 
 // helper: parse "YYYY-MM-DD" to a date range covering full day in UTC
 const dayRange = (dateStr) => {
@@ -206,53 +221,98 @@ const getMyAttendance = async (req, res) => {
   }
 };
 
-const selfieAttendance = async (req, res) => {
+// @desc  Get the admin-configured attendance location
+// @route GET /api/hr/attendance/location-config
+const getAttendanceLocation = async (req, res) => {
   try {
-    // Support both HR token (req.hrStaff) and regular POS token (req.user)
+    const setting = await Settings.findOne({ key: 'attendance_location' });
+    res.json(setting ? setting.value : null);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Set or update the attendance location (admin only)
+// @route POST /api/hr/attendance/location-config
+const setAttendanceLocation = async (req, res) => {
+  try {
+    const { lat, lng, radius = 10, label } = req.body;
+    if (lat == null || lng == null) {
+      return res.status(400).json({ message: 'lat and lng are required' });
+    }
+    const value = { lat: Number(lat), lng: Number(lng), radius: Number(radius), label: label || '' };
+    const setting = await Settings.findOneAndUpdate(
+      { key: 'attendance_location' },
+      { key: 'attendance_location', value },
+      { upsert: true, new: true }
+    );
+    res.json(setting.value);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Staff check-in / check-out via GPS location
+// @route POST /api/hr/attendance/location
+const locationAttendance = async (req, res) => {
+  try {
+    // Resolve staffId from either HR token or regular POS token
     let staffId;
     if (req.hrStaff) {
       staffId = req.hrStaff._id;
     } else if (req.user) {
-      // Look up the HRStaff record by email to link waiter/kitchen staff
       const hrStaff = await HRStaff.findOne({ email: req.user.email });
       if (!hrStaff) {
-        return res.status(404).json({ message: 'No HR staff profile found for this account. Please ask admin to create your staff profile.' });
+        return res.status(404).json({
+          message: 'No HR staff profile found for this account. Please ask admin to create your staff profile.',
+        });
       }
       staffId = hrStaff._id;
     } else {
       return res.status(401).json({ message: 'Not authorized' });
     }
+
+    const { lat, lng } = req.body;
+    if (lat == null || lng == null) {
+      return res.status(400).json({ message: 'Location (lat, lng) is required' });
+    }
+
+    // Verify against the admin-set location
+    const setting = await Settings.findOne({ key: 'attendance_location' });
+    if (!setting || !setting.value) {
+      return res.status(400).json({ message: 'Attendance location has not been configured by admin yet.' });
+    }
+
+    const { lat: aLat, lng: aLng, radius = 10 } = setting.value;
+    const distance = haversineMetres(Number(lat), Number(lng), aLat, aLng);
+
+    if (distance > radius) {
+      return res.status(403).json({
+        message: `You are ${Math.round(distance)}m away from the work location. Must be within ${radius}m to mark attendance.`,
+        distance: Math.round(distance),
+        radius,
+      });
+    }
+
     const staff = staffId;
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
     const { start } = dayRange(dateStr);
-    const checkTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    const checkTime =
+      now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
 
-    let update = { 
-      staff, 
-      date: start, 
+    const existing = await HRAttendance.findOne({ staff, date: { $gte: start } });
+
+    let update = {
+      staff,
+      date: start,
       status: 'present',
-      markedBy: staff
+      location: { lat: Number(lat), lng: Number(lng) },
+      markedBy: staff,
     };
 
-    if (req.file) {
-      update.selfie = `/uploads/attendance/${req.file.filename}`;
-    }
-    
-    if (req.body.location) {
-      try {
-        update.location = JSON.parse(req.body.location);
-      } catch (e) {
-        console.error("Location parse error", e);
-      }
-    }
-
-    // If already checked in today, update checkOut, else update checkIn
-    const existing = await HRAttendance.findOne({ staff, date: { $gte: start } });
-    
     if (existing && existing.checkIn) {
       update.checkOut = checkTime;
-      // Calculate work hours
       const [inH, inM] = existing.checkIn.split(':').map(Number);
       const [outH, outM] = checkTime.split(':').map(Number);
       let workHours = (outH * 60 + outM - (inH * 60 + inM)) / 60;
@@ -268,13 +328,10 @@ const selfieAttendance = async (req, res) => {
       { upsert: true, new: true }
     ).populate('staff', 'name email');
 
-    // Emit socket event for admin panel real-time update
     const io = req.app.get('io');
-    if (io) {
-      io.emit('attendanceUpdate', record);
-    }
+    if (io) io.emit('attendanceUpdate', record);
 
-    res.status(201).json(record);
+    res.status(201).json({ record, distance: Math.round(distance) });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -282,5 +339,6 @@ const selfieAttendance = async (req, res) => {
 
 module.exports = {
   getAttendance, markAttendance, updateAttendance, deleteAttendance,
-  getAttendanceSummary, getMyAttendance, selfieAttendance
+  getAttendanceSummary, getMyAttendance,
+  getAttendanceLocation, setAttendanceLocation, locationAttendance,
 };
