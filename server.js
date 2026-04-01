@@ -22,6 +22,11 @@ const hrAttendanceRoutes = require("./routes/hrAttendanceRoutes");
 const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
 const hrShiftRoutes = require("./routes/hrShiftRoutes");
 const hrPayrollRoutes = require("./routes/hrPayrollRoutes");
+const ledgerRoutes = require("./routes/ledgerRoutes");
+const transactionRoutes = require("./routes/transactionRoutes");
+const accountCategoryRoutes = require("./routes/accountCategoryRoutes");
+const reportRoutes = require("./routes/reportRoutes");
+const recurringRoutes = require("./routes/recurringRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -151,6 +156,12 @@ app.use("/api/hr/attendance", hrAttendanceRoutes);
 app.use("/api/hr/leaves", hrLeaveRoutes);
 app.use("/api/hr/shifts", hrShiftRoutes);
 app.use("/api/hr/payroll", hrPayrollRoutes);
+// Accounting / Tally Routes
+app.use("/api/accounting/ledgers", ledgerRoutes);
+app.use("/api/accounting/transactions", transactionRoutes);
+app.use("/api/accounting/categories", accountCategoryRoutes);
+app.use("/api/accounting/reports", reportRoutes);
+app.use("/api/accounting/recurring", recurringRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
