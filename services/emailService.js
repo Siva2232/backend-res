@@ -1,15 +1,30 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+const { promisify } = require('util');
+
+const dnsLookup = promisify(dns.lookup);
 
 /**
  * Create a reusable transporter using environment SMTP config.
  * Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
  * For Gmail: use smtp.gmail.com, port 587, and an App Password.
  */
-const createTransporter = (port) => {
+const createTransporter = async (port) => {
   const smtpPort = port || Number(process.env.SMTP_PORT) || 465;
   const isSecure = smtpPort === 465;
+  const hostname = process.env.SMTP_HOST || 'smtp.gmail.com';
+
+  // Explicitly resolve to an IPv4 address to avoid ENETUNREACH on IPv6-disabled hosts
+  let resolvedHost = hostname;
+  try {
+    const { address } = await dnsLookup(hostname, { family: 4 });
+    resolvedHost = address;
+  } catch (_) {
+    // fall back to the hostname if resolution fails
+  }
+
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: resolvedHost,
     port: smtpPort,
     secure: isSecure,
     auth: {
@@ -18,11 +33,11 @@ const createTransporter = (port) => {
     },
     tls: {
       rejectUnauthorized: false,
+      servername: hostname, // required for TLS SNI when host is an IP address
     },
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 45000,
-    family: 4, // force IPv4 transport (avoid ENETUNREACH IPv6 issues on Render)
   });
 };
 
@@ -140,7 +155,7 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
   for (let i = 0; i < portsToTry.length; i++) {
     const port = portsToTry[i];
     try {
-      const transporter = createTransporter(port);
+      const transporter = await createTransporter(port);
       await transporter.sendMail(mailOptions);
       console.log(`[EmailService] Payslip sent successfully to ${toEmail} via port ${port}`);
       return;
