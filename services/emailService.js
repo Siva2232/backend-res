@@ -5,11 +5,13 @@ const nodemailer = require('nodemailer');
  * Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
  * For Gmail: use smtp.gmail.com, port 587, and an App Password.
  */
-const createTransporter = () => {
+const createTransporter = (port) => {
+  const smtpPort = port || Number(process.env.SMTP_PORT) || 465;
+  const isSecure = smtpPort === 465;
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: false, // true for 465, false for 587
+    port: smtpPort,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -17,9 +19,9 @@ const createTransporter = () => {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 45000,
   });
 };
 
@@ -36,7 +38,6 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
     return;
   }
 
-  const transporter = createTransporter();
   const monthName = new Date(2000, payroll.month - 1).toLocaleString('en', { month: 'long' });
   const companyName = process.env.COMPANY_NAME || 'Restaurant Management System';
   const companyEmail = process.env.COMPANY_EMAIL || process.env.SMTP_USER;
@@ -116,24 +117,41 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
 
   console.log(`[EmailService] Attempting to send email to ${toEmail}...`);
 
-  try {
-    await transporter.sendMail({
-      from: `"${companyName}" <${companyEmail}>`,
-      to: toEmail,
-      subject: `Payslip for ${monthName} ${payroll.year} – ${companyName}`,
-      html: htmlTemplate,
-      attachments: [
-        {
-          filename,
-          content: pdfBuffer,
-          contentType: 'application/pdf',
-        },
-      ],
-    });
-    console.log(`[EmailService] Payslip sent successfully to ${toEmail}`);
-  } catch (error) {
-    console.error(`[EmailService] Error sending email to ${toEmail}:`, error);
-    throw error; // Rethrow to let the controller catch the 500 error and see the stack trace
+  const mailOptions = {
+    from: `"${companyName}" <${companyEmail}>`,
+    to: toEmail,
+    subject: `Payslip for ${monthName} ${payroll.year} – ${companyName}`,
+    html: htmlTemplate,
+    attachments: [
+      {
+        filename,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+  };
+
+  // Try primary port first, then fallback ports
+  const primaryPort = Number(process.env.SMTP_PORT) || 465;
+  const fallbackPorts = primaryPort === 465 ? [587] : [465];
+  const portsToTry = [primaryPort, ...fallbackPorts];
+
+  for (let i = 0; i < portsToTry.length; i++) {
+    const port = portsToTry[i];
+    try {
+      const transporter = createTransporter(port);
+      await transporter.sendMail(mailOptions);
+      console.log(`[EmailService] Payslip sent successfully to ${toEmail} via port ${port}`);
+      return;
+    } catch (error) {
+      const isLastAttempt = i === portsToTry.length - 1;
+      if (isLastAttempt) {
+        console.error(`[EmailService] Failed to send email to ${toEmail} on all ports. Last error:`, error.message);
+        // Do not rethrow — email failure should not block payroll processing
+      } else {
+        console.warn(`[EmailService] Port ${port} failed (${error.code || error.message}), retrying with port ${portsToTry[i + 1]}...`);
+      }
+    }
   }
 };
 
