@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const compression = require("compression");
+const path = require("path");
 const connectDB = require("./config/db");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -11,12 +12,16 @@ const authRoutes = require("./routes/authRoutes");
 const bannerRoutes = require("./routes/bannerRoutes");
 const offerRoutes = require("./routes/offerRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
-const expenseRoutes = require("./routes/expenseRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const subItemRoutes = require("./routes/subItemRoutes");
 const tableRoutes = require("./routes/tableRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const reservationRoutes = require("./routes/reservationRoutes");
+const hrStaffRoutes = require("./routes/hrStaffRoutes");
+const hrAttendanceRoutes = require("./routes/hrAttendanceRoutes");
+const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
+const hrShiftRoutes = require("./routes/hrShiftRoutes");
+const hrPayrollRoutes = require("./routes/hrPayrollRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -24,9 +29,16 @@ dotenv.config();
 // create express app and HTTP server early
 // so we can reference `server` when starting after DB connection
 const app = express();
+const fs = require('fs');
 const http = require('http');
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Create uploads/attendance directory if it doesn't exist
+const attendanceDir = path.join(__dirname, 'uploads', 'attendance');
+if (!fs.existsSync(attendanceDir)) {
+  fs.mkdirSync(attendanceDir, { recursive: true });
+}
 
 // establish database connection and start server only when ready
 // this prevents incoming requests from hitting mongoose before
@@ -34,6 +46,9 @@ const PORT = process.env.PORT || 5000;
 connectDB()
   .then(() => {
     console.log("MongoDB connection established from server.js");
+    // Initialize HR cron jobs after DB is ready
+    const { initHRCronJobs } = require('./services/cronService');
+    initHRCronJobs();
     // start listening after DB is connected
     server.listen(PORT, () =>
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
@@ -111,6 +126,8 @@ io.on('connection', async (socket) => {
 // make the io instance retrievable from request handlers
 app.set('io', io);
 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 app.get("/", (req, res) => {
   res.send("API is running...");
 });
@@ -123,12 +140,17 @@ app.use("/api/auth", authRoutes);
 app.use("/api/banners", bannerRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/categories", categoryRoutes);
-app.use("/api/expenses", expenseRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/sub-items", subItemRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reservations", reservationRoutes);
+// HR Module Routes
+app.use("/api/hr/staff", hrStaffRoutes);
+app.use("/api/hr/attendance", hrAttendanceRoutes);
+app.use("/api/hr/leaves", hrLeaveRoutes);
+app.use("/api/hr/shifts", hrShiftRoutes);
+app.use("/api/hr/payroll", hrPayrollRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

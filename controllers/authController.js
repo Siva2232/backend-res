@@ -25,7 +25,7 @@ const authUser = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
-      isAdmin: user.isAdmin,
+      isAdmin: user.isAdmin || false,
       isKitchen: user.isKitchen || false,
       isWaiter: user.isWaiter || false,
       token: generateToken(user._id),
@@ -78,60 +78,6 @@ const registerUser = async (req, res) => {
   }
 };
 
-
-// @desc    Create kitchen/waiter user (admin only)
-// @route   POST /api/auth/staff
-// @access  Private/Admin
-const createStaff = async (req, res) => {
-  try {
-    // admin middleware should already verify but double-check
-    if (!req.user || !(req.user.isAdmin === true || String(req.user.isAdmin).toLowerCase() === "true")) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    const { name, email, password, isKitchen = false, isWaiter = false, salary = 0, advance = 0 } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Name, email and password are required" });
-    }
-
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ message: "User already exists" });
-    }
-
-    const userData = {
-      name,
-      email,
-      password,
-      isAdmin: false,
-      isKitchen: isKitchen === true || String(isKitchen).toLowerCase() === "true",
-      isWaiter: isWaiter === true || String(isWaiter).toLowerCase() === "true",
-      salary: Number(salary) || 0,
-      advance: Number(advance) || 0,
-      salaryHistory: [],
-    };
-    if (salary && !isNaN(Number(salary))) {
-      userData.salaryHistory.push({ amount: Number(salary), date: new Date() });
-    }
-    const user = await User.create(userData);
-
-    if (user) {
-      return res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        isAdmin: user.isAdmin,
-        isKitchen: user.isKitchen || false,
-        isWaiter: user.isWaiter || false,
-      });
-    }
-
-    res.status(500).json({ message: "Failed to create user" });
-  } catch (error) {
-    console.error("createStaff error", error);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 // @desc    Get all users (admin only)
 // @route   GET /api/auth/users
@@ -233,4 +179,4 @@ const deleteUser = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-module.exports = { authUser, registerUser, createStaff, getUsers, updateUser, deleteUser };
+module.exports = { authUser, registerUser, getUsers, updateUser, deleteUser };
