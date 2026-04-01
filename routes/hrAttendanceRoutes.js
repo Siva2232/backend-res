@@ -1,25 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const {
   getAttendance, markAttendance, updateAttendance, deleteAttendance,
-  getAttendanceSummary, getMyAttendance, selfieAttendance
+  getAttendanceSummary, getMyAttendance,
+  getAttendanceLocation, setAttendanceLocation, locationAttendance,
 } = require('../controllers/hrAttendanceController');
 const { protectHR, protectAny, anyAdmin } = require('../middleware/hrAuthMiddleware');
 
-// Multer config for selfie
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/attendance/'),
-  filename: (req, file, cb) => cb(null, `selfie-${Date.now()}${path.extname(file.originalname)}`)
-});
-const upload = multer({ storage });
-
-// Staff selfie: accepts BOTH POS token (waiter/kitchen) AND HR token
+// Staff — get own attendance history
 router.get('/mine', protectAny, getMyAttendance);
-router.post('/selfie', protectAny, upload.single('selfie'), selfieAttendance);
 
-// Admin/Manager — accepts POS admin token OR HR admin/manager token
+// Staff — check-in / check-out via GPS (requires location within radius)
+router.post('/location', protectAny, locationAttendance);
+
+// Admin — get / set the work location used for attendance radius check
+router.get('/location-config', protectAny, anyAdmin, getAttendanceLocation);
+router.post('/location-config', protectAny, anyAdmin, setAttendanceLocation);
+
+// Admin/Manager
 router.get('/', protectAny, anyAdmin, getAttendance);
 router.post('/', protectAny, anyAdmin, markAttendance);
 router.get('/summary/:staffId', protectAny, anyAdmin, getAttendanceSummary);
