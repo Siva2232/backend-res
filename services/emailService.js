@@ -15,10 +15,11 @@ const createTransporter = () => {
       pass: process.env.SMTP_PASS,
     },
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
     },
-    dnsTimeout: 10000,
     connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 };
 

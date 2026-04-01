@@ -1,3 +1,8 @@
+// Force IPv4 DNS resolution globally — prevents ENETUNREACH on platforms
+// (like Render) that don't support outbound IPv6 connections (e.g. to smtp.gmail.com)
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
