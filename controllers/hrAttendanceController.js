@@ -16,6 +16,18 @@ const haversineMetres = (lat1, lng1, lat2, lng2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+// IST is UTC+5:30 and never observes Daylight Saving Time
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// Returns current date string and HH:MM time in IST
+const nowIST = () => {
+  const d = new Date(Date.now() + IST_OFFSET_MS);
+  return {
+    dateStr:   d.toISOString().slice(0, 10),  // "YYYY-MM-DD"
+    checkTime: d.toISOString().slice(11, 16), // "HH:MM"
+  };
+};
+
 // helper: parse "YYYY-MM-DD" to a date range covering full day in UTC
 const dayRange = (dateStr) => {
   const start = new Date(dateStr);
@@ -284,11 +296,8 @@ const locationAttendance = async (req, res) => {
     }
 
     const staff = staffId;
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
+    const { dateStr, checkTime } = nowIST(); // use IST, not server-local UTC
     const { start, end } = dayRange(dateStr);
-    const checkTime =
-      now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
     const existing = await HRAttendance.findOne({ staff, date: { $gte: start, $lte: end } });
 
     let update = {
