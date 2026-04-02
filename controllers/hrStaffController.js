@@ -185,12 +185,14 @@ const updateStaff = async (req, res) => {
       user.isWaiter = isWaiter;
       user.salary = staff.baseSalary || 0;
       await user.save();
-    } else if (isAdmin || isKitchen || isWaiter) {
-      // Create if it didn't exist but now meets criteria
+    } else if ((isAdmin || isKitchen || isWaiter) && password) {
+      // Only create User record if a plain-text password was provided in this request.
+      // Never use staff.password here — it is already hashed by HRStaff pre-save and
+      // passing it to User.create would cause double-hashing.
       await User.create({
         name: staff.name,
         email: staff.email,
-        password: password || staff.password, // This might be already hashed if not changed, but User model hashes too
+        password, // plain text from req.body — User pre-save hook will hash it
         isAdmin,
         isKitchen,
         isWaiter,

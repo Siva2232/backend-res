@@ -225,7 +225,7 @@ const getAttendanceLocation = async (req, res) => {
 // @route POST /api/hr/attendance/location-config
 const setAttendanceLocation = async (req, res) => {
   try {
-    const { lat, lng, radius = 10, label } = req.body;
+    const { lat, lng, radius = 100, label } = req.body;
     if (lat == null || lng == null) {
       return res.status(400).json({ message: 'lat and lng are required' });
     }
@@ -272,7 +272,7 @@ const locationAttendance = async (req, res) => {
       return res.status(400).json({ message: 'Attendance location has not been configured by admin yet.' });
     }
 
-    const { lat: aLat, lng: aLng, radius = 10 } = setting.value;
+    const { lat: aLat, lng: aLng, radius = 100 } = setting.value;
     const distance = haversineMetres(Number(lat), Number(lng), aLat, aLng);
 
     if (distance > radius) {
