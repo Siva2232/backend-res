@@ -35,9 +35,9 @@ const createTransporter = async (port) => {
       rejectUnauthorized: false,
       servername: hostname, // required for TLS SNI when host is an IP address
     },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 45000,
+    connectionTimeout: 60000, // Increase to 60s
+    greetingTimeout: 60000,   // Increase to 60s
+    socketTimeout: 90000,     // Increase to 90s
   });
 };
 
