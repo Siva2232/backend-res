@@ -1,4 +1,5 @@
 const HRLeave = require('../models/HRLeave');
+const { emitUpdate } = require('../utils/socketUtils');
 
 // @desc  Get leaves (admin: all, staff: own)
 // @route GET /api/hr/leaves
@@ -49,6 +50,7 @@ const applyLeave = async (req, res) => {
 
     const leave = await HRLeave.create({ staff: staffId, type, startDate, endDate, reason });
     const populated = await HRLeave.findById(leave._id).populate('staff', 'name email');
+    emitUpdate(req, 'leaveUpdate', populated);
     res.status(201).json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -74,6 +76,7 @@ const updateLeave = async (req, res) => {
     const populated = await HRLeave.findById(leave._id)
       .populate('staff', 'name email department')
       .populate('reviewedBy', 'name');
+    emitUpdate(req, 'leaveUpdate', populated);
     res.json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -87,6 +90,7 @@ const deleteLeave = async (req, res) => {
     const leave = await HRLeave.findById(req.params.id);
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
     await leave.deleteOne();
+    emitUpdate(req, 'leaveDelete', req.params.id);
     res.json({ message: 'Leave deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });

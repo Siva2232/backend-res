@@ -1,5 +1,6 @@
 const Transaction = require("../models/Transaction");
 const Ledger = require("../models/Ledger");
+const { emitUpdate } = require('../utils/socketUtils');
 
 // GET /api/accounting/transactions
 exports.getTransactions = async (req, res) => {
@@ -70,6 +71,7 @@ exports.createTransaction = async (req, res) => {
     const populated = await Transaction.findById(tx._id)
       .populate("entries.ledger", "name type")
       .populate("category", "name color");
+    emitUpdate(req, 'transactionUpdate', populated);
     res.status(201).json(populated);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -96,6 +98,7 @@ exports.deleteTransaction = async (req, res) => {
     }
 
     await tx.deleteOne();
+    emitUpdate(req, 'transactionDelete', req.params.id);
     res.json({ message: "Transaction deleted and balances reversed" });
   } catch (err) {
     res.status(500).json({ message: err.message });

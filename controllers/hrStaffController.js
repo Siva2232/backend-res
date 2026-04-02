@@ -1,6 +1,7 @@
 const HRStaff = require('../models/HRStaff');
 const User = require('../models/User'); // Import User model
 const jwt = require('jsonwebtoken');
+const { emitUpdate } = require('../utils/socketUtils');
 
 const generateToken = (id) =>
   jwt.sign({ id, type: 'hr' }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -148,6 +149,7 @@ const createStaff = async (req, res) => {
 
     const result = staff.toObject();
     delete result.password;
+    emitUpdate(req, 'staffUpdate', result);
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -202,6 +204,7 @@ const updateStaff = async (req, res) => {
 
     const result = staff.toObject();
     delete result.password;
+    emitUpdate(req, 'staffUpdate', result);
     res.json(result);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -219,6 +222,7 @@ const deleteStaff = async (req, res) => {
     await User.findOneAndDelete({ email: staff.email });
 
     await staff.deleteOne();
+    emitUpdate(req, 'staffDelete', req.params.id);
     res.json({ message: 'Staff deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
