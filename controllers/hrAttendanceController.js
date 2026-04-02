@@ -1,6 +1,7 @@
 const HRAttendance = require('../models/HRAttendance');
 const HRStaff = require('../models/HRStaff');
 const Settings = require('../models/Settings');
+const { emitUpdate } = require('../utils/socketUtils');
 
 // Haversine distance in metres between two lat/lng points
 const haversineMetres = (lat1, lng1, lat2, lng2) => {
@@ -102,7 +103,9 @@ const markAttendance = async (req, res) => {
 
       results.push(record);
     }
-    res.status(201).json(results.length === 1 ? results[0] : results);
+    const finalResult = results.length === 1 ? results[0] : results;
+    emitUpdate(req, 'attendanceUpdate', finalResult);
+    res.status(201).json(finalResult);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -127,6 +130,7 @@ const updateAttendance = async (req, res) => {
       { new: true, runValidators: true }
     ).populate('staff', 'name email');
     if (!record) return res.status(404).json({ message: 'Attendance record not found' });
+    emitUpdate(req, 'attendanceUpdate', record);
     res.json(record);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -139,6 +143,7 @@ const deleteAttendance = async (req, res) => {
   try {
     const record = await HRAttendance.findByIdAndDelete(req.params.id);
     if (!record) return res.status(404).json({ message: 'Record not found' });
+    emitUpdate(req, 'attendanceDelete', req.params.id);
     res.json({ message: 'Record deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
