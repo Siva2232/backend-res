@@ -9,9 +9,10 @@ const dnsLookup = promisify(dns.lookup);
  * Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
  * For Gmail: use smtp.gmail.com, port 587, and an App Password.
  */
-const createTransporter = async (port) => {
-  const smtpPort = port || Number(process.env.SMTP_PORT) || 465;
-  const isSecure = smtpPort === 465;
+const createTransporter = async () => {
+  // Always use port 587 + STARTTLS (Gmail's recommended submission path).
+  // Port 465 (SMTPS) is frequently blocked by ISPs and cloud hosts — skip it.
+  const smtpPort = 587;
   const hostname = process.env.SMTP_HOST || 'smtp.gmail.com';
 
   // Explicitly resolve to an IPv4 address to avoid ENETUNREACH on IPv6-disabled hosts
@@ -26,7 +27,8 @@ const createTransporter = async (port) => {
   return nodemailer.createTransport({
     host: resolvedHost,
     port: smtpPort,
-    secure: isSecure,
+    secure: false,          // STARTTLS — do NOT set true for 587
+    requireTLS: true,       // enforce upgrade; throws if server doesn't support STARTTLS
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -35,9 +37,9 @@ const createTransporter = async (port) => {
       rejectUnauthorized: false,
       servername: hostname, // required for TLS SNI when host is an IP address
     },
-    connectionTimeout: 60000, // Increase to 60s
-    greetingTimeout: 60000,   // Increase to 60s
-    socketTimeout: 90000,     // Increase to 90s
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
   });
 };
 
@@ -147,27 +149,15 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
     ],
   };
 
-  // Try primary port first, then fallback ports
-  const primaryPort = Number(process.env.SMTP_PORT) || 465;
-  const fallbackPorts = primaryPort === 465 ? [587] : [465];
-  const portsToTry = [primaryPort, ...fallbackPorts];
+  console.log(`[EmailService] Attempting to send email to ${toEmail}...`);
 
-  for (let i = 0; i < portsToTry.length; i++) {
-    const port = portsToTry[i];
-    try {
-      const transporter = await createTransporter(port);
-      await transporter.sendMail(mailOptions);
-      console.log(`[EmailService] Payslip sent successfully to ${toEmail} via port ${port}`);
-      return;
-    } catch (error) {
-      const isLastAttempt = i === portsToTry.length - 1;
-      if (isLastAttempt) {
-        console.error(`[EmailService] Failed to send email to ${toEmail} on all ports. Last error:`, error.message);
-        // Do not rethrow — email failure should not block payroll processing
-      } else {
-        console.warn(`[EmailService] Port ${port} failed (${error.code || error.message}), retrying with port ${portsToTry[i + 1]}...`);
-      }
-    }
+  try {
+    const transporter = await createTransporter();
+    await transporter.sendMail(mailOptions);
+    console.log(`[EmailService] Payslip sent successfully to ${toEmail}`);
+  } catch (error) {
+    console.error(`[EmailService] Failed to send email to ${toEmail}:`, error.message);
+    // Do not rethrow — email failure should not block payroll processing
   }
 };
 
