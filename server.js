@@ -27,11 +27,7 @@ const hrAttendanceRoutes = require("./routes/hrAttendanceRoutes");
 const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
 const hrShiftRoutes = require("./routes/hrShiftRoutes");
 const hrPayrollRoutes = require("./routes/hrPayrollRoutes");
-const ledgerRoutes = require("./routes/ledgerRoutes");
-const transactionRoutes = require("./routes/transactionRoutes");
-const accountCategoryRoutes = require("./routes/accountCategoryRoutes");
-const reportRoutes = require("./routes/reportRoutes");
-const recurringRoutes = require("./routes/recurringRoutes");
+const accRoutes = require("./routes/accRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 dotenv.config();
@@ -59,6 +55,9 @@ connectDB()
     // Initialize HR cron jobs after DB is ready
     const { initHRCronJobs } = require('./services/cronService');
     initHRCronJobs();
+    // Seed accounting Chart of Accounts
+    const { seedAccounts } = require('./utils/accSeeder');
+    seedAccounts();
     // start listening after DB is connected
     server.listen(PORT, () =>
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
@@ -161,12 +160,8 @@ app.use("/api/hr/attendance", hrAttendanceRoutes);
 app.use("/api/hr/leaves", hrLeaveRoutes);
 app.use("/api/hr/shifts", hrShiftRoutes);
 app.use("/api/hr/payroll", hrPayrollRoutes);
-// Accounting / Tally Routes
-app.use("/api/accounting/ledgers", ledgerRoutes);
-app.use("/api/accounting/transactions", transactionRoutes);
-app.use("/api/accounting/categories", accountCategoryRoutes);
-app.use("/api/accounting/reports", reportRoutes);
-app.use("/api/accounting/recurring", recurringRoutes);
+// Accounting / Tally Module Routes
+app.use("/api/acc", accRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

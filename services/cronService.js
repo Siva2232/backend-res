@@ -89,16 +89,6 @@ const initHRCronJobs = () => {
   }, { timezone: 'Asia/Kolkata' });
 
   console.log('[HR Cron] Jobs initialized (payroll gen: 1st 00:05, emails: 1st 09:00)');
-
-  // ── Daily at 00:01 → process recurring accounting transactions ──────────
-  cron.schedule('1 0 * * *', async () => {
-    try {
-      const { processRecurring } = require('../controllers/recurringController');
-      await processRecurring();
-    } catch (err) {
-      console.error('[Accounting Cron] Recurring failed:', err.message);
-    }
-  }, { timezone: 'Asia/Kolkata' });
 };
 
 module.exports = { initHRCronJobs };
