@@ -1,4 +1,8 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+const { promisify } = require('util');
+
+const dnsLookup = promisify(dns.lookup);
 
 /**
  * Reusable SMTP Transporter with connection pooling.
@@ -7,28 +11,36 @@ const nodemailer = require('nodemailer');
  */
 let transporter = null;
 
-const getTransporter = () => {
+const getTransporter = async () => {
   if (transporter) return transporter;
 
   const hostname = process.env.SMTP_HOST || 'smtp.gmail.com';
   const smtpPort = parseInt(process.env.SMTP_PORT || '587');
 
+  // Force IPv4 resolution — prevents ENETUNREACH when the host has no IPv6 route
+  let resolvedHost = hostname;
+  try {
+    const { address } = await dnsLookup(hostname, { family: 4 });
+    resolvedHost = address;
+  } catch (_) {
+    // fall back to the raw hostname if DNS resolution fails
+  }
+
   transporter = nodemailer.createTransport({
-    host: hostname,
+    host: resolvedHost,         // IPv4 address — avoids ENETUNREACH on IPv6
     port: smtpPort,
-    secure: smtpPort === 465, // Use SMTPS only for port 465
+    secure: smtpPort === 465,   // Use SMTPS only for port 465
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
     tls: {
-      // Helps bypass common SSL/TLS certificate issues on some hosting environments
       rejectUnauthorized: false,
+      servername: hostname,     // SNI must use the original hostname, not the IP
     },
-    // Shorter timeouts to fail fast and release resources if the server is unreachable
     connectionTimeout: 10000,
     greetingTimeout: 10000,
-    pool: true, // Use pooling to handle multiple emails efficiently
+    pool: true,
     maxConnections: 5,
     maxMessages: 100,
   });
@@ -143,15 +155,13 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
   };
 
   try {
-    const t = getTransporter();
+    const t = await getTransporter();
     await t.sendMail(mailOptions);
     console.log(`[EmailService] Payslip sent successfully to ${toEmail}`);
   } catch (error) {
     console.error(`[EmailService] Failed to send email to ${toEmail}:`, error.message);
-    // Connection pool failure fallback - refresh transporter
-    if (error.message.includes('pool') || error.code === 'ECONNECTION') {
-      transporter = null;
-    }
+    // Reset transporter so a fresh IPv4 DNS lookup runs on the next attempt
+    transporter = null;
   }
 };
 
