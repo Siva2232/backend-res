@@ -1,46 +1,39 @@
 const nodemailer = require('nodemailer');
-const dns = require('dns');
-const { promisify } = require('util');
-
-const dnsLookup = promisify(dns.lookup);
 
 /**
- * Create a reusable transporter using environment SMTP config.
- * Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
- * For Gmail: use smtp.gmail.com, port 587, and an App Password.
+ * Reusable SMTP Transporter with connection pooling.
+ * This prevents creating a new connection for every email, 
+ * which helps avoid timeouts and improves reliability.
  */
-const createTransporter = async () => {
-  // Always use port 587 + STARTTLS (Gmail's recommended submission path).
-  // Port 465 (SMTPS) is frequently blocked by ISPs and cloud hosts — skip it.
-  const smtpPort = 587;
+let transporter = null;
+
+const getTransporter = () => {
+  if (transporter) return transporter;
+
   const hostname = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
 
-  // Explicitly resolve to an IPv4 address to avoid ENETUNREACH on IPv6-disabled hosts
-  let resolvedHost = hostname;
-  try {
-    const { address } = await dnsLookup(hostname, { family: 4 });
-    resolvedHost = address;
-  } catch (_) {
-    // fall back to the hostname if resolution fails
-  }
-
-  return nodemailer.createTransport({
-    host: resolvedHost,
+  transporter = nodemailer.createTransport({
+    host: hostname,
     port: smtpPort,
-    secure: false,          // STARTTLS — do NOT set true for 587
-    requireTLS: true,       // enforce upgrade; throws if server doesn't support STARTTLS
+    secure: smtpPort === 465, // Use SMTPS only for port 465
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
     tls: {
+      // Helps bypass common SSL/TLS certificate issues on some hosting environments
       rejectUnauthorized: false,
-      servername: hostname, // required for TLS SNI when host is an IP address
     },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 60000,
+    // Shorter timeouts to fail fast and release resources if the server is unreachable
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    pool: true, // Use pooling to handle multiple emails efficiently
+    maxConnections: 5,
+    maxMessages: 100,
   });
+
+  return transporter;
 };
 
 /**
@@ -149,15 +142,16 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
     ],
   };
 
-  console.log(`[EmailService] Attempting to send email to ${toEmail}...`);
-
   try {
-    const transporter = await createTransporter();
-    await transporter.sendMail(mailOptions);
+    const t = getTransporter();
+    await t.sendMail(mailOptions);
     console.log(`[EmailService] Payslip sent successfully to ${toEmail}`);
   } catch (error) {
     console.error(`[EmailService] Failed to send email to ${toEmail}:`, error.message);
-    // Do not rethrow — email failure should not block payroll processing
+    // Connection pool failure fallback - refresh transporter
+    if (error.message.includes('pool') || error.code === 'ECONNECTION') {
+      transporter = null;
+    }
   }
 };
 
