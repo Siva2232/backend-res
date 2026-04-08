@@ -19,13 +19,12 @@ const accPaymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accPaymentSchema.pre('save', async function (next) {
+accPaymentSchema.pre('save', async function () {
   if (this.isNew && !this.paymentNo) {
     const last = await this.constructor.findOne({}, {}, { sort: { createdAt: -1 } });
     const num = last ? parseInt(last.paymentNo?.replace('PAY-', '') || 0) + 1 : 1;
     this.paymentNo = `PAY-${String(num).padStart(4, '0')}`;
   }
-  next();
 });
 
 module.exports = mongoose.model('AccPayment', accPaymentSchema);

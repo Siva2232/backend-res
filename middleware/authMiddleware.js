@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const SuperAdmin = require("../models/SuperAdmin");
+const { tenantStorage } = require("../utils/tenantPlugin");
 
 const protect = async (req, res, next) => {
   let token;
@@ -32,12 +34,35 @@ const protect = async (req, res, next) => {
 
     try {
       const decoded = verifyToken(token);
+
+      // Super Admin tokens carry role: "superadmin" in payload
+      if (decoded.role === "superadmin") {
+        const sa = await SuperAdmin.findById(decoded.id).select("-password");
+        if (!sa) return res.status(401).json({ message: "Super Admin not found" });
+        req.user = { ...sa.toObject(), role: "superadmin" };
+        return next();
+      }
+
       req.user = await User.findById(decoded.id).select("-password");
 
       if (!req.user) {
         return res.status(401).json({ message: "User not found, please login again" });
       }
 
+      // Attach restaurantId and role to req.user for downstream use
+      if (!req.user.restaurantId && decoded.restaurantId) {
+        req.user.restaurantId = decoded.restaurantId;
+      }
+      if (!req.user.role && decoded.role) {
+        req.user.role = decoded.role;
+      }
+
+      // Set req.restaurantId for getModel() in controllers
+      const rid = req.user.restaurantId;
+      if (rid) {
+        req.restaurantId = String(rid).toUpperCase();
+        return tenantStorage.run({ restaurantId: req.restaurantId }, () => next());
+      }
       return next();
     } catch (error) {
       console.error("JWT verify error:", error);

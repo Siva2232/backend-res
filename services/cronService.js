@@ -91,4 +91,85 @@ const initHRCronJobs = () => {
   console.log('[HR Cron] Jobs initialized (payroll gen: 1st 00:05, emails: 1st 09:00)');
 };
 
-module.exports = { initHRCronJobs };
+// ─────────────────────────────────────────────────────────────────────────────
+// Subscription Expiry Reminder Cron
+// Runs every day at 08:00 — checks all restaurants expiring in ≤3 days
+// ─────────────────────────────────────────────────────────────────────────────
+const initSubscriptionCronJobs = () => {
+  const Restaurant = require('../models/Restaurant');
+  const nodemailer = require('nodemailer');
+
+  const sendReminderEmail = async (toEmail, restaurantName, daysLeft, expiryDate) => {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+    const { sendGenericEmail } = require('./emailService');
+    const subject = `⚠️ Subscription Expiring in ${daysLeft} Day(s) — ${restaurantName}`;
+    const html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
+        <h2 style="color:#f72585">Subscription Expiry Reminder</h2>
+        <p>Dear <strong>${restaurantName}</strong>,</p>
+        <p>Your subscription will expire on <strong>${new Date(expiryDate).toDateString()}</strong> — that's <strong>${daysLeft} day(s)</strong> from now.</p>
+        <p>Please renew your plan to avoid service interruption.</p>
+        <a href="${process.env.FRONTEND_URL || '#'}/admin/subscription" 
+           style="display:inline-block;background:#f72585;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:600">
+          Renew Now
+        </a>
+        <p style="margin-top:24px;color:#64748b;font-size:12px">This is an automated reminder. Do not reply to this email.</p>
+      </div>`;
+    try {
+      if (typeof sendGenericEmail === 'function') {
+        await sendGenericEmail(toEmail, subject, html);
+      }
+    } catch (e) {
+      console.error('[Subscription Cron] Email failed:', e.message);
+    }
+  };
+
+  cron.schedule('0 8 * * *', async () => {
+    console.log('[Subscription Cron] Checking subscription expiries...');
+    try {
+      const now = new Date();
+      const in3Days = new Date(now);
+      in3Days.setDate(in3Days.getDate() + 3);
+
+      // Find all active restaurants expiring within 3 days
+      const restaurants = await Restaurant.find({
+        subscriptionStatus: 'active',
+        subscriptionExpiry: { $lte: in3Days, $gte: now },
+      });
+
+      for (const r of restaurants) {
+        const msLeft = r.subscriptionExpiry - now;
+        const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+
+        if (daysLeft <= 3 && !r.reminderSent3Days && r.ownerEmail) {
+          await sendReminderEmail(r.ownerEmail, r.name, daysLeft, r.subscriptionExpiry);
+          r.reminderSent3Days = true;
+          await r.save();
+          console.log(`[Subscription Cron] 3-day reminder sent to ${r.name} (${r.restaurantId})`);
+        }
+
+        if (daysLeft <= 1 && !r.reminderSent1Day && r.ownerEmail) {
+          await sendReminderEmail(r.ownerEmail, r.name, daysLeft, r.subscriptionExpiry);
+          r.reminderSent1Day = true;
+          await r.save();
+          console.log(`[Subscription Cron] 1-day reminder sent to ${r.name} (${r.restaurantId})`);
+        }
+      }
+
+      // Mark expired subscriptions
+      const expired = await Restaurant.updateMany(
+        { subscriptionStatus: 'active', subscriptionExpiry: { $lt: now } },
+        { $set: { subscriptionStatus: 'expired' } }
+      );
+      if (expired.modifiedCount > 0)
+        console.log(`[Subscription Cron] Marked ${expired.modifiedCount} subscription(s) as expired`);
+
+    } catch (err) {
+      console.error('[Subscription Cron] Error:', err.message);
+    }
+  }, { timezone: 'Asia/Kolkata' });
+
+  console.log('[Subscription Cron] Jobs initialized (daily 08:00)');
+};
+
+module.exports = { initHRCronJobs, initSubscriptionCronJobs };

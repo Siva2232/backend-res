@@ -28,7 +28,13 @@ const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
 const hrShiftRoutes = require("./routes/hrShiftRoutes");
 const hrPayrollRoutes = require("./routes/hrPayrollRoutes");
 const accRoutes = require("./routes/accRoutes");
+const restaurantRoutes = require("./routes/restaurantRoutes");
+const subscriptionPlanRoutes = require("./routes/subscriptionPlanRoutes");
+const superAdminRoutes = require("./routes/superAdminRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+const { tenantMiddleware } = require("./middleware/tenantMiddleware");
+const { requireFeature } = require("./middleware/featureMiddleware");
+const { protect } = require("./middleware/authMiddleware");
 
 dotenv.config();
 
@@ -53,8 +59,9 @@ connectDB()
   .then(() => {
     console.log("MongoDB connection established from server.js");
     // Initialize HR cron jobs after DB is ready
-    const { initHRCronJobs } = require('./services/cronService');
+    const { initHRCronJobs, initSubscriptionCronJobs } = require('./services/cronService');
     initHRCronJobs();
+    initSubscriptionCronJobs();
     // Seed accounting Chart of Accounts
     const { seedAccounts } = require('./utils/accSeeder');
     seedAccounts();
@@ -112,20 +119,30 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
-io.on('connection', async (socket) => {
+io.on('connection', (socket) => {
   console.log('socket client connected', socket.id);
 
-  // send a lightweight snapshot of active orders only (no images/heavy fields)
-  try {
-    const Order = require('./models/Order');
-    const orders = await Order.find(
-      { status: { $in: ['Pending', 'New', 'Preparing', 'Ready', 'Served'] } },
-      { 'items.image': 0, 'items.product': 0, waiter: 0, paymentId: 0, __v: 0 }
-    ).sort({ createdAt: -1 }).limit(100).lean();
-    socket.emit('ordersSnapshot', orders);
-  } catch (err) {
-    console.error('failed to load orders for socket snapshot', err);
-  }
+  // Client must emit joinRoom with its restaurantId to receive restaurant-scoped events
+  socket.on('joinRoom', async (restaurantId) => {
+    if (!restaurantId) return;
+    const rid = String(restaurantId).toUpperCase().trim();
+    socket.join(rid);
+    console.log(`socket ${socket.id} joined room ${rid}`);
+
+    // send a lightweight snapshot of active orders for this restaurant only
+    try {
+      const OrderModel = require('./models/Order');
+      const { getModel } = require('./utils/getModel');
+      const Order = getModel('Order', OrderModel.schema, rid);
+      const orders = await Order.find(
+        { status: { $in: ['Pending', 'New', 'Preparing', 'Ready', 'Served'] } },
+        { 'items.image': 0, 'items.product': 0, waiter: 0, paymentId: 0, __v: 0 }
+      ).sort({ createdAt: -1 }).limit(100).lean();
+      socket.emit('ordersSnapshot', orders);
+    } catch (err) {
+      console.error('failed to load orders for socket snapshot', err);
+    }
+  });
 
   socket.on('disconnect', () => {
     console.log('socket client disconnected', socket.id);
@@ -136,6 +153,19 @@ io.on('connection', async (socket) => {
 app.set('io', io);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Global middleware: ensure req.restaurantId is set from query param / header
+// for routes that are not protected by JWT (public customer-facing routes).
+// Protected routes have it set earlier by authMiddleware or tenantMiddleware.
+app.use((req, _res, next) => {
+  if (!req.restaurantId) {
+    const rid =
+      req.query.restaurantId ||
+      req.headers['x-restaurant-id'];
+    if (rid) req.restaurantId = String(rid).toUpperCase().trim();
+  }
+  next();
+});
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -154,14 +184,19 @@ app.use("/api/sub-items", subItemRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reservations", reservationRoutes);
-// HR Module Routes
+// HR Module Routes — feature guard applied inside routes that need it
+// (HR staff /login is public, so we can't guard at app.use level)
 app.use("/api/hr/staff", hrStaffRoutes);
 app.use("/api/hr/attendance", hrAttendanceRoutes);
 app.use("/api/hr/leaves", hrLeaveRoutes);
 app.use("/api/hr/shifts", hrShiftRoutes);
 app.use("/api/hr/payroll", hrPayrollRoutes);
-// Accounting / Tally Module Routes
+// Accounting / Tally Module Routes — all routes require auth already via router.use(protect)
 app.use("/api/acc", accRoutes);
+// SaaS Multi-Tenant Routes
+app.use("/api/restaurants", restaurantRoutes);
+app.use("/api/plans", subscriptionPlanRoutes);
+app.use("/api/superadmin", superAdminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

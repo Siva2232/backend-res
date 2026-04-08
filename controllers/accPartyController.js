@@ -1,4 +1,7 @@
-const AccParty = require('../models/AccParty');
+const AccPartyBaseModel = require('../models/AccParty');
+const { getModel } = require('../utils/getModel');
+
+const AccParty = (req) => getModel('AccParty', AccPartyBaseModel.schema, req.restaurantId);
 
 // @desc  Get all parties
 // @route GET /api/acc/parties
@@ -12,8 +15,8 @@ const getParties = async (req, res) => {
       { email: { $regex: search, $options: 'i' } },
     ];
     if (type) query.type = type;
-    const total = await AccParty.countDocuments(query);
-    const parties = await AccParty.find(query)
+    const total = await AccParty(req).countDocuments(query);
+    const parties = await AccParty(req).find(query)
       .sort({ name: 1 })
       .skip((Number(page) - 1) * Number(limit))
       .limit(Number(limit));
@@ -26,7 +29,7 @@ const getParties = async (req, res) => {
 // @route GET /api/acc/parties/:id
 const getParty = async (req, res) => {
   try {
-    const party = await AccParty.findById(req.params.id);
+    const party = await AccParty(req).findById(req.params.id);
     if (!party) return res.status(404).json({ message: 'Party not found' });
     res.json(party);
   } catch (err) {
@@ -37,7 +40,7 @@ const getParty = async (req, res) => {
 // @route POST /api/acc/parties
 const createParty = async (req, res) => {
   try {
-    const party = await AccParty.create({
+    const party = await AccParty(req).create({
       ...req.body,
       balance: req.body.openingBalance || 0,
     });
@@ -50,7 +53,7 @@ const createParty = async (req, res) => {
 // @route PUT /api/acc/parties/:id
 const updateParty = async (req, res) => {
   try {
-    const party = await AccParty.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const party = await AccParty(req).findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     if (!party) return res.status(404).json({ message: 'Party not found' });
     res.json(party);
   } catch (err) {

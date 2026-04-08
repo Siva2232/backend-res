@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+const generateToken = (id, restaurantId, role) => {
+  return jwt.sign({ id, restaurantId: restaurantId || null, role: role || "admin" }, process.env.JWT_SECRET, {
     expiresIn: "30d",
   });
 };
@@ -21,14 +21,18 @@ const authUser = async (req, res) => {
     user.loginHistory.push(new Date());
     await user.save();
 
+    const role = user.role || (user.isAdmin ? "admin" : user.isKitchen ? "kitchen" : user.isWaiter ? "waiter" : "admin");
+
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
+      restaurantId: user.restaurantId || null,
+      role,
       isAdmin: user.isAdmin || false,
       isKitchen: user.isKitchen || false,
       isWaiter: user.isWaiter || false,
-      token: generateToken(user._id),
+      token: generateToken(user._id, user.restaurantId, role),
     });
   } else {
     res.status(401).json({ message: "Invalid email or password" });

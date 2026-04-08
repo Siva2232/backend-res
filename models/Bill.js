@@ -75,4 +75,5 @@ billSchema.index({ billedAt: -1 });
 billSchema.index({ createdAt: -1 });
 billSchema.index({ orderRef: 1 });
 
-module.exports = mongoose.model("Bill", billSchema);
+const Bill = mongoose.model("Bill", billSchema);
+module.exports = Bill;

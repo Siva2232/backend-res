@@ -26,13 +26,12 @@ const accLoanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accLoanSchema.pre('save', async function (next) {
+accLoanSchema.pre('save', async function () {
   if (this.isNew && !this.loanNo) {
     const last = await this.constructor.findOne({}, {}, { sort: { createdAt: -1 } });
     const num = last ? parseInt(last.loanNo?.replace('LN-', '') || 0) + 1 : 1;
     this.loanNo = `LN-${String(num).padStart(4, '0')}`;
   }
-  next();
 });
 
 module.exports = mongoose.model('AccLoan', accLoanSchema);

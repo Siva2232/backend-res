@@ -1,13 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const Notification = require('../models/Notification');
+const NotificationModel = require('../models/Notification');
+const { getModel } = require('../utils/getModel');
+const Notification = (req) => getModel('Notification', NotificationModel.schema, req.restaurantId);
 
 // @desc    Get all notifications
 // @route   GET /api/notifications
 // @access  Private/Admin
 router.get('/', async (req, res) => {
   try {
-    const notifications = await Notification.find({ status: 'Pending' }).sort({ createdAt: -1 });
+    const notifications = await Notification(req).find({ status: 'Pending' }).sort({ createdAt: -1 });
     res.json(notifications);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -21,7 +23,7 @@ router.post('/', async (req, res) => {
   const { table, type, message } = req.body;
 
   try {
-    const notification = new Notification({
+    const notification = new (Notification(req))({
       table,
       type,
       message,
@@ -31,8 +33,8 @@ router.post('/', async (req, res) => {
 
     // Emit socket event if io is available
     const io = req.app.get('io');
-    if (io) {
-      io.emit('newNotification', createdNotification);
+    if (io && req.restaurantId) {
+      io.to(req.restaurantId).emit('newNotification', createdNotification);
     }
 
     res.status(201).json(createdNotification);
@@ -46,15 +48,15 @@ router.post('/', async (req, res) => {
 // @access  Private/Admin
 router.put('/:id', async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.id);
+    const notification = await Notification(req).findById(req.params.id);
 
     if (notification) {
       notification.status = 'Completed';
       const updatedNotification = await notification.save();
       
       const io = req.app.get('io');
-      if (io) {
-        io.emit('notificationUpdated', updatedNotification);
+      if (io && req.restaurantId) {
+        io.to(req.restaurantId).emit('notificationUpdated', updatedNotification);
       }
       
       res.json(updatedNotification);
@@ -71,7 +73,7 @@ router.put('/:id', async (req, res) => {
 // @access  Private/Admin
 router.delete('/', async (req, res) => {
     try {
-      await Notification.deleteMany({ status: 'Completed' });
+      await Notification(req).deleteMany({ status: 'Completed' });
       res.json({ message: 'Cleared completed notifications' });
     } catch (error) {
       res.status(500).json({ message: error.message });

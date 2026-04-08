@@ -1,4 +1,7 @@
-const KitchenBill = require("../models/KitchenBill");
+const KitchenBillModel = require("../models/KitchenBill");
+const { getModel } = require("../utils/getModel");
+
+const KitchenBill = (req) => getModel("KitchenBill", KitchenBillModel.schema, req.restaurantId);
 
 // @desc    Get all kitchen bills (for kitchen/waiter view)
 // @route   GET /api/kitchen-bills
@@ -6,7 +9,7 @@ const KitchenBill = require("../models/KitchenBill");
 const getKitchenBills = async (req, res) => {
   try {
     // Support optional query params: limit, status, table
-    let query = KitchenBill.find({});
+    let query = KitchenBill(req).find({});
     
     // Filter by status if provided
     if (req.query.status) {
@@ -42,7 +45,7 @@ const getKitchenBills = async (req, res) => {
 // @access  Private
 const getKitchenBillsByOrder = async (req, res) => {
   try {
-    const kitchenBills = await KitchenBill.find({ orderRef: req.params.orderId })
+    const kitchenBills = await KitchenBill(req).find({ orderRef: req.params.orderId })
       .sort({ batchNumber: 1 })
       .lean();
     res.json(kitchenBills);
@@ -57,7 +60,7 @@ const getKitchenBillsByOrder = async (req, res) => {
 // @access  Private
 const getKitchenBillsByTable = async (req, res) => {
   try {
-    const kitchenBills = await KitchenBill.find({ 
+    const kitchenBills = await KitchenBill(req).find({ 
       table: req.params.tableNum,
       status: { $ne: "Served" } // Only show non-served bills
     })
@@ -75,7 +78,7 @@ const getKitchenBillsByTable = async (req, res) => {
 // @access  Private (Kitchen/Admin)
 const updateKitchenBillStatus = async (req, res) => {
   try {
-    const kitchenBill = await KitchenBill.findById(req.params.id);
+    const kitchenBill = await KitchenBill(req).findById(req.params.id);
     
     if (!kitchenBill) {
       return res.status(404).json({ message: "Kitchen bill not found" });
@@ -87,7 +90,7 @@ const updateKitchenBillStatus = async (req, res) => {
     // Emit socket event
     const io = req.app.get("io");
     if (io) {
-      io.emit("kitchenBillUpdated", updatedKitchenBill);
+      io.to(req.restaurantId).emit("kitchenBillUpdated", updatedKitchenBill);
     }
     
     res.json(updatedKitchenBill);
@@ -102,7 +105,7 @@ const updateKitchenBillStatus = async (req, res) => {
 // @access  Private
 const getActiveKitchenBills = async (req, res) => {
   try {
-    const kitchenBills = await KitchenBill.find({
+    const kitchenBills = await KitchenBill(req).find({
       status: { $in: ["Pending", "New", "Preparing", "Ready"] }
     })
       .select("-__v -items.image -items.product -items.addedAt -items.isNewItem")

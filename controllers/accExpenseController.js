@@ -1,5 +1,9 @@
-const AccExpense = require('../models/AccExpense');
-const AccParty = require('../models/AccParty');
+const AccExpenseBaseModel = require('../models/AccExpense');
+const { getModel } = require('../utils/getModel');
+
+const AccExpense = (req) => getModel('AccExpense', AccExpenseBaseModel.schema, req.restaurantId);
+const AccPartyBaseModel2 = require('../models/AccParty');
+const AccParty = (req) => getModel('AccParty', AccPartyBaseModel2.schema, req.restaurantId);
 const { buildExpenseEntries, createLedgerEntries, reverseLedgerEntries } = require('../utils/accLedgerUtils');
 
 // @route GET /api/acc/expenses
@@ -16,8 +20,8 @@ const getExpenses = async (req, res) => {
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
     if (search) query.expenseNo = { $regex: search, $options: 'i' };
-    const total = await AccExpense.countDocuments(query);
-    const expenses = await AccExpense.find(query)
+    const total = await AccExpense(req).countDocuments(query);
+    const expenses = await AccExpense(req).find(query)
       .populate('party', 'name phone type')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -31,7 +35,7 @@ const getExpenses = async (req, res) => {
 // @route GET /api/acc/expenses/:id
 const getExpense = async (req, res) => {
   try {
-    const expense = await AccExpense.findById(req.params.id)
+    const expense = await AccExpense(req).findById(req.params.id)
       .populate('party', 'name phone email address')
       .populate('ledgerEntries');
     if (!expense) return res.status(404).json({ message: 'Expense not found' });
@@ -48,14 +52,14 @@ const createExpense = async (req, res) => {
     const balance = totalAmount - paidAmount;
     const status = paidAmount <= 0 ? 'Unpaid' : balance <= 0 ? 'Paid' : 'Partial';
 
-    const expense = await AccExpense.create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, category, date, party: partyId });
+    const expense = await AccExpense(req).create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, category, date, party: partyId });
     const entries = await buildExpenseEntries({ category, totalAmount, paidAmount, balance, paymentMode, date: date ? new Date(date) : new Date() });
     const saved = await createLedgerEntries(entries, 'AccExpense', expense._id, partyId);
     expense.ledgerEntries = saved.map(e => e._id);
     await expense.save();
 
     if (partyId && balance > 0) {
-      await AccParty.findByIdAndUpdate(partyId, { $inc: { balance: -balance } });
+      await AccParty(req).findByIdAndUpdate(partyId, { $inc: { balance: -balance } });
     }
     res.status(201).json(expense);
   } catch (err) {
@@ -66,14 +70,14 @@ const createExpense = async (req, res) => {
 // @route PUT /api/acc/expenses/:id
 const updateExpense = async (req, res) => {
   try {
-    const expense = await AccExpense.findById(req.params.id);
+    const expense = await AccExpense(req).findById(req.params.id);
     if (!expense) return res.status(404).json({ message: 'Expense not found' });
 
     const oldBalance = expense.balance;
     const partyId = expense.party;
     await reverseLedgerEntries(expense.ledgerEntries);
     if (partyId && oldBalance > 0) {
-      await AccParty.findByIdAndUpdate(partyId, { $inc: { balance: oldBalance } });
+      await AccParty(req).findByIdAndUpdate(partyId, { $inc: { balance: oldBalance } });
     }
 
     const { totalAmount, paidAmount = 0, paymentMode, category, date } = { ...expense.toObject(), ...req.body };
@@ -87,7 +91,7 @@ const updateExpense = async (req, res) => {
     await expense.save();
 
     if (expense.party && balance > 0) {
-      await AccParty.findByIdAndUpdate(expense.party, { $inc: { balance: -balance } });
+      await AccParty(req).findByIdAndUpdate(expense.party, { $inc: { balance: -balance } });
     }
     res.json(expense);
   } catch (err) {
@@ -98,11 +102,11 @@ const updateExpense = async (req, res) => {
 // @route DELETE /api/acc/expenses/:id
 const deleteExpense = async (req, res) => {
   try {
-    const expense = await AccExpense.findById(req.params.id);
+    const expense = await AccExpense(req).findById(req.params.id);
     if (!expense) return res.status(404).json({ message: 'Expense not found' });
     await reverseLedgerEntries(expense.ledgerEntries);
     if (expense.party && expense.balance > 0) {
-      await AccParty.findByIdAndUpdate(expense.party, { $inc: { balance: expense.balance } });
+      await AccParty(req).findByIdAndUpdate(expense.party, { $inc: { balance: expense.balance } });
     }
     await expense.deleteOne();
     res.json({ message: 'Expense deleted' });

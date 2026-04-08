@@ -1,5 +1,9 @@
-const AccPurchase = require('../models/AccPurchase');
-const AccParty = require('../models/AccParty');
+const AccPurchaseBaseModel = require('../models/AccPurchase');
+const { getModel } = require('../utils/getModel');
+
+const AccPurchase = (req) => getModel('AccPurchase', AccPurchaseBaseModel.schema, req.restaurantId);
+const AccPartyBaseModel2 = require('../models/AccParty');
+const AccParty = (req) => getModel('AccParty', AccPartyBaseModel2.schema, req.restaurantId);
 const { buildPurchaseEntries, createLedgerEntries, reverseLedgerEntries } = require('../utils/accLedgerUtils');
 
 // @route GET /api/acc/purchases
@@ -15,8 +19,8 @@ const getPurchases = async (req, res) => {
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
     if (search) query.purchaseNo = { $regex: search, $options: 'i' };
-    const total = await AccPurchase.countDocuments(query);
-    const purchases = await AccPurchase.find(query)
+    const total = await AccPurchase(req).countDocuments(query);
+    const purchases = await AccPurchase(req).find(query)
       .populate('party', 'name phone type')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -30,7 +34,7 @@ const getPurchases = async (req, res) => {
 // @route GET /api/acc/purchases/:id
 const getPurchase = async (req, res) => {
   try {
-    const purchase = await AccPurchase.findById(req.params.id)
+    const purchase = await AccPurchase(req).findById(req.params.id)
       .populate('party', 'name phone email address')
       .populate('ledgerEntries');
     if (!purchase) return res.status(404).json({ message: 'Purchase not found' });
@@ -47,7 +51,7 @@ const createPurchase = async (req, res) => {
     const balance = totalAmount - paidAmount;
     const status = paidAmount <= 0 ? 'Unpaid' : balance <= 0 ? 'Paid' : 'Partial';
 
-    const purchase = await AccPurchase.create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, date, party: partyId });
+    const purchase = await AccPurchase(req).create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, date, party: partyId });
     const entries = await buildPurchaseEntries({ totalAmount, paidAmount, balance, paymentMode, date: date ? new Date(date) : new Date() });
     const saved = await createLedgerEntries(entries, 'AccPurchase', purchase._id, partyId);
     purchase.ledgerEntries = saved.map(e => e._id);
@@ -55,7 +59,7 @@ const createPurchase = async (req, res) => {
 
     // Negative balance on party = we owe them (payable)
     if (partyId && balance > 0) {
-      await AccParty.findByIdAndUpdate(partyId, { $inc: { balance: -balance } });
+      await AccParty(req).findByIdAndUpdate(partyId, { $inc: { balance: -balance } });
     }
     res.status(201).json(purchase);
   } catch (err) {
@@ -66,14 +70,14 @@ const createPurchase = async (req, res) => {
 // @route PUT /api/acc/purchases/:id
 const updatePurchase = async (req, res) => {
   try {
-    const purchase = await AccPurchase.findById(req.params.id);
+    const purchase = await AccPurchase(req).findById(req.params.id);
     if (!purchase) return res.status(404).json({ message: 'Purchase not found' });
 
     const oldBalance = purchase.balance;
     const partyId = purchase.party;
     await reverseLedgerEntries(purchase.ledgerEntries);
     if (partyId && oldBalance > 0) {
-      await AccParty.findByIdAndUpdate(partyId, { $inc: { balance: oldBalance } });
+      await AccParty(req).findByIdAndUpdate(partyId, { $inc: { balance: oldBalance } });
     }
 
     const { totalAmount, paidAmount = 0, paymentMode, date } = { ...purchase.toObject(), ...req.body };
@@ -87,7 +91,7 @@ const updatePurchase = async (req, res) => {
     await purchase.save();
 
     if (purchase.party && balance > 0) {
-      await AccParty.findByIdAndUpdate(purchase.party, { $inc: { balance: -balance } });
+      await AccParty(req).findByIdAndUpdate(purchase.party, { $inc: { balance: -balance } });
     }
     res.json(purchase);
   } catch (err) {
@@ -98,11 +102,11 @@ const updatePurchase = async (req, res) => {
 // @route DELETE /api/acc/purchases/:id
 const deletePurchase = async (req, res) => {
   try {
-    const purchase = await AccPurchase.findById(req.params.id);
+    const purchase = await AccPurchase(req).findById(req.params.id);
     if (!purchase) return res.status(404).json({ message: 'Purchase not found' });
     await reverseLedgerEntries(purchase.ledgerEntries);
     if (purchase.party && purchase.balance > 0) {
-      await AccParty.findByIdAndUpdate(purchase.party, { $inc: { balance: purchase.balance } });
+      await AccParty(req).findByIdAndUpdate(purchase.party, { $inc: { balance: purchase.balance } });
     }
     await purchase.deleteOne();
     res.json({ message: 'Purchase deleted' });

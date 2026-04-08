@@ -1,9 +1,16 @@
-const Order = require("../models/Order");
-const Bill = require("../models/Bill");
-const KitchenBill = require("../models/KitchenBill");
-const Settings = require("../models/Settings");
+const OrderModel = require("../models/Order");
+const BillModel = require("../models/Bill");
+const KitchenBillModel = require("../models/KitchenBill");
+const SettingsModel = require("../models/Settings");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { getModel } = require("../utils/getModel");
+
+// Per-request dynamic model helpers
+const Order       = (req) => getModel("Order",       OrderModel.schema,       req.restaurantId);
+const Bill        = (req) => getModel("Bill",        BillModel.schema,        req.restaurantId);
+const KitchenBill = (req) => getModel("KitchenBill", KitchenBillModel.schema, req.restaurantId);
+const Settings    = (req) => getModel("Settings",    SettingsModel.schema,    req.restaurantId);
 
 // ── In-memory cache to avoid a DB hit on every token / stats request ──────────
 let _cachedTokenResetAt = null; // updated when resetTokenCount is called
@@ -42,7 +49,7 @@ const addOrderItems = async (req, res) => {
   // ONLY MERGE if existingOrderId is provided and it is still ACTIVE
   let existingOrder = null;
   if (existingOrderId) {
-    existingOrder = await Order.findOne({
+    existingOrder = await Order(req).findOne({
       _id: existingOrderId,
       status: { $in: ["Pending", "New", "Preparing", "Ready"] },
     });
@@ -56,7 +63,7 @@ const addOrderItems = async (req, res) => {
 
     if (customerName && customerName.trim()) {
       mergeQueries.push(
-        Order.findOne({
+        Order(req).findOne({
           customerName: customerName.trim(),
           status: { $in: ["Pending", "New", "Preparing", "Ready"] },
         }).sort({ createdAt: -1 })
@@ -67,7 +74,7 @@ const addOrderItems = async (req, res) => {
 
     if (tableNo && tableNo !== "TAKEAWAY") {
       mergeQueries.push(
-        Order.findOne({
+        Order(req).findOne({
           table: tableNo,
           status: { $in: ["Pending", "New", "Preparing", "Ready"] },
         }).sort({ createdAt: -1 })
@@ -154,7 +161,7 @@ const addOrderItems = async (req, res) => {
 
         // Run bill update and kitchen bill creation in parallel
         const billUpdatePromise = (async () => {
-          const bill = await Bill.findOne({ orderRef: updatedOrder._id });
+          const bill = await Bill(req).findOne({ orderRef: updatedOrder._id });
           if (bill) {
             bill.items = updatedOrder.items;
             bill.totalAmount = updatedOrder.totalAmount;
@@ -183,12 +190,12 @@ const addOrderItems = async (req, res) => {
             }
             
             await bill.save();
-            if (io) io.emit("billUpdated", bill);
+            if (io) io.to(req.restaurantId).emit("billUpdated", bill);
           }
         })();
 
         const kitchenBillPromise = (async () => {
-          const lastBatch = await KitchenBill.findOne({ orderRef: updatedOrder._id })
+          const lastBatch = await KitchenBill(req).findOne({ orderRef: updatedOrder._id })
             .sort({ batchNumber: -1 })
             .select("batchNumber")
             .lean();
@@ -196,7 +203,7 @@ const addOrderItems = async (req, res) => {
           
           const batchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
           
-          const kitchenBill = await KitchenBill.create({
+          const kitchenBill = await KitchenBill(req).create({
             orderRef: updatedOrder._id,
             batchNumber: nextBatchNumber,
             table: updatedOrder.table,
@@ -212,14 +219,14 @@ const addOrderItems = async (req, res) => {
             notes: notes || "",
           });
           
-          if (io && kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+          if (io && kitchenBill) io.to(req.restaurantId).emit("kitchenBillCreated", kitchenBill);
         })();
 
         await Promise.all([billUpdatePromise, kitchenBillPromise]);
 
         if (io) {
-          io.emit("orderUpdated", updatedOrder);
-          io.emit("orderItemsAdded", {
+          io.to(req.restaurantId).emit("orderUpdated", updatedOrder);
+          io.to(req.restaurantId).emit("orderItemsAdded", {
             order: updatedOrder,
             newItems: newItems,
             table: updatedOrder.table,
@@ -240,10 +247,10 @@ const addOrderItems = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     // Respect manual reset: count only orders created after the last reset (or start of day)
-    const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
+    const resetSetting = await Settings(req).findOne({ key: "tokenResetAt" }).lean();
     const resetAt = resetSetting ? new Date(resetSetting.value) : null;
     const since = (resetAt && resetAt > today) ? resetAt : today;
-    const count = await Order.countDocuments({
+    const count = await Order(req).countDocuments({
       isTakeawayOrder: true,
       createdAt: { $gte: since },
     });
@@ -297,14 +304,14 @@ const addOrderItems = async (req, res) => {
     }
   }
 
-  const order = new Order(orderData);
+  const order = new (Order(req))(orderData);
   const createdOrder = await order.save();
 
   // BROADCAST ORDER IMMEDIATELY after save — don't wait for bill/kitchen creation
   // This removes the 3-5s delay caused by waiting for Bill + KitchenBill DB writes
   const io = req.app.get("io");
   if (io) {
-    io.emit("orderCreated", createdOrder);
+    io.to(req.restaurantId).emit("orderCreated", createdOrder);
   }
 
   // RESPOND immediately so the client gets the token without waiting
@@ -315,7 +322,7 @@ const addOrderItems = async (req, res) => {
   (async () => {
     try {
       const [newBill, kitchenBill] = await Promise.all([
-    Bill.create({
+    Bill(req).create({
       orderRef: createdOrder._id,
       table: createdOrder.table,
       hasTakeaway: createdOrder.hasTakeaway,
@@ -335,7 +342,7 @@ const addOrderItems = async (req, res) => {
       billDetails: createdOrder.billDetails,
       billedAt: createdOrder.createdAt,
     }),
-    KitchenBill.create({
+    KitchenBill(req).create({
       orderRef: createdOrder._id,
       batchNumber: 1,
       table: createdOrder.table,
@@ -353,8 +360,8 @@ const addOrderItems = async (req, res) => {
     ]);
 
       if (io) {
-        if (newBill) io.emit("billCreated", newBill);
-        if (kitchenBill) io.emit("kitchenBillCreated", kitchenBill);
+        if (newBill) io.to(req.restaurantId).emit("billCreated", newBill);
+        if (kitchenBill) io.to(req.restaurantId).emit("kitchenBillCreated", kitchenBill);
       }
     } catch (bgErr) {
       console.error("Background bill/kitchen creation error:", bgErr);
@@ -366,7 +373,7 @@ const addOrderItems = async (req, res) => {
 // @route   GET /api/orders/:id
 // @access  Public
 const getOrderById = async (req, res) => {
-  const order = await Order.findById(req.params.id).populate("items.product", "name price image");
+  const order = await Order(req).findById(req.params.id).populate("items.product", "name price image");
 
   if (order) {
     res.json(order);
@@ -379,7 +386,7 @@ const getOrderById = async (req, res) => {
 // @route   PUT /api/orders/:id/status
 // @access  Private/Admin
 const updateOrderStatus = async (req, res) => {
-  const order = await Order.findById(req.params.id);
+  const order = await Order(req).findById(req.params.id);
 
   if (!order) {
     return res.status(404).json({ message: "Order not found" });
@@ -394,7 +401,7 @@ const updateOrderStatus = async (req, res) => {
 
   // Sync with bill state
   if (isBillRequested !== undefined) {
-    await Bill.updateMany(
+    await Bill(req).updateMany(
       { orderRef: order._id },
       { $set: { isBillRequested: isBillRequested } }
     );
@@ -405,15 +412,15 @@ const updateOrderStatus = async (req, res) => {
   // after reload/polling.
   if (status === "Closed") {
     try {
-      await Bill.updateMany(
+      await Bill(req).updateMany(
         { orderRef: order._id },
         { $set: { status: "Closed" } }
       );
       // emit billUpdated events for any changed bills
-      const bills = await Bill.find({ orderRef: order._id });
+      const bills = await Bill(req).find({ orderRef: order._id });
       const io = req.app.get('io');
-      if (io) {
-        bills.forEach((bill) => io.emit('billUpdated', bill));
+      if (io && req.restaurantId) {
+        bills.forEach((bill) => io.to(req.restaurantId).emit('billUpdated', bill));
       }
     } catch (billError) {
       console.error("Failed to update related bill status:", billError);
@@ -423,8 +430,8 @@ const updateOrderStatus = async (req, res) => {
 
   // emit update event so frontends can react immediately
   const io = req.app.get('io');
-  if (io) {
-    io.emit('orderUpdated', updatedOrder);
+  if (io && req.restaurantId) {
+    io.to(req.restaurantId).emit('orderUpdated', updatedOrder);
   }
 
   res.json(updatedOrder);
@@ -437,7 +444,7 @@ const resetTokenCount = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     // 1. Close all currently active takeaway tokens so the board clears
-    await Order.updateMany(
+    await Order(req).updateMany(
       {
         isTakeawayOrder: true,
         status: { $in: ["Pending", "New", "Preparing", "Ready"] },
@@ -447,7 +454,7 @@ const resetTokenCount = async (req, res) => {
     );
 
     // 2. Persist the reset timestamp — new tokens will count from now
-    await Settings.findOneAndUpdate(
+    await Settings(req).findOneAndUpdate(
       { key: "tokenResetAt" },
       { value: now.toISOString() },
       { upsert: true, new: true }
@@ -459,7 +466,7 @@ const resetTokenCount = async (req, res) => {
 
     // 3. Emit socket event so all connected frontends refresh instantly
     const io = req.app.get("io");
-    if (io) io.emit("tokenReset", { resetAt: now.toISOString() });
+    if (io) io.to(req.restaurantId).emit("tokenReset", { resetAt: now.toISOString() });
 
     res.json({ message: "Token counter reset successfully", resetAt: now.toISOString() });
   } catch (error) {
@@ -484,13 +491,13 @@ const getTokens = async (req, res) => {
       since = (resetAt > today) ? resetAt : today;
     } else {
       // First cold call: fetch from DB and cache it
-      const resetSetting = await Settings.findOne({ key: "tokenResetAt" }).lean();
+      const resetSetting = await Settings(req).findOne({ key: "tokenResetAt" }).lean();
       _cachedTokenResetAt = resetSetting ? resetSetting.value : null;
       const resetAt = _cachedTokenResetAt ? new Date(_cachedTokenResetAt) : null;
       since = (resetAt && resetAt > today) ? resetAt : today;
     }
 
-    const tokens = await Order.find({
+    const tokens = await Order(req).find({
       isTakeawayOrder: true,
       tokenNumber: { $exists: true },
       createdAt: { $gte: since, $lt: new Date(today.getTime() + 86400000) },
@@ -534,7 +541,7 @@ const getOrders = async (req, res) => {
     const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
 
     // optimization: only fetch necessary fields for the order list
-    const orders = await Order.find(filter)
+    const orders = await Order(req).find(filter)
       .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price items.image isTakeawayOrder tokenNumber')
       .sort({ createdAt: -1 })
       .skip(skip > 0 ? skip : 0)
@@ -552,7 +559,7 @@ const getOrders = async (req, res) => {
 // @route   GET /api/orders/table/:tableNum
 // @access  Public
 const getTableOrders = async (req, res) => {
-  const orders = await Order.find({
+  const orders = await Order(req).find({
     table: req.params.tableNum,
     status: { $in: ["Pending", "New", "Preparing", "Ready", "Served"] },
   })
@@ -592,8 +599,8 @@ const getOrderStats = async (req, res) => {
 
     // Run today-count and all-time revenue+sellers in parallel
     const [todayCount, revenueAgg] = await Promise.all([
-      Order.countDocuments({ createdAt: { $gte: startOfDay } }),
-      Order.aggregate([
+      Order(req).countDocuments({ createdAt: { $gte: startOfDay } }),
+      Order(req).aggregate([
         { $match: { status: { $in: ["Paid", "Closed"] } } },
         { $group: {
             _id: null,
@@ -604,7 +611,7 @@ const getOrderStats = async (req, res) => {
     ]);
 
     // Best sellers: unwind items → group by name → sort
-    const sellersAgg = await Order.aggregate([
+    const sellersAgg = await Order(req).aggregate([
       { $match: { status: { $in: ["Paid", "Closed"] } } },
       { $unwind: "$items" },
       { $group: { _id: "$items.name", qty: { $sum: "$items.qty" } } },

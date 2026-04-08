@@ -19,4 +19,5 @@ const hrShiftSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
 module.exports = mongoose.model('HRShift', hrShiftSchema);

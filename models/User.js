@@ -6,6 +6,14 @@ const userSchema = mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    // Multi-tenant: each user belongs to a restaurant
+    restaurantId: { type: String, default: null, uppercase: true, trim: true },
+    // Unified role field alongside legacy booleans
+    role: {
+      type: String,
+      enum: ["admin", "kitchen", "waiter", "hr", "superadmin"],
+      default: "admin",
+    },
     isAdmin: { type: Boolean, required: true, default: true },
     isKitchen: { type: Boolean, required: true, default: false },
     isWaiter: { type: Boolean, required: true, default: false },

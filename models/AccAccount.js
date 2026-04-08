@@ -29,4 +29,6 @@ const accAccountSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+accAccountSchema.index({ code: 1 });
+
 module.exports = mongoose.model('AccAccount', accAccountSchema);

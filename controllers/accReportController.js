@@ -1,12 +1,20 @@
-const AccAccount = require('../models/AccAccount');
-const AccLedgerEntry = require('../models/AccLedgerEntry');
-const AccOrder = require('../models/AccOrder');
-const AccPurchase = require('../models/AccPurchase');
-const AccExpense = require('../models/AccExpense');
-const AccParty = require('../models/AccParty');
+const AccAccountBaseModel = require('../models/AccAccount');
+const AccLedgerEntryBaseModel = require('../models/AccLedgerEntry');
+const AccOrderBaseModel = require('../models/AccOrder');
+const AccPurchaseBaseModel = require('../models/AccPurchase');
+const AccExpenseBaseModel = require('../models/AccExpense');
+const AccPartyBaseModel = require('../models/AccParty');
+const { getModel } = require('../utils/getModel');
 
-const sumLedger = async (filter) => {
-  const res = await AccLedgerEntry.aggregate([
+const AccAccount     = (req) => getModel('AccAccount',     AccAccountBaseModel.schema,     req.restaurantId);
+const AccLedgerEntry = (req) => getModel('AccLedgerEntry', AccLedgerEntryBaseModel.schema, req.restaurantId);
+const AccOrder       = (req) => getModel('AccOrder',       AccOrderBaseModel.schema,       req.restaurantId);
+const AccPurchase    = (req) => getModel('AccPurchase',    AccPurchaseBaseModel.schema,    req.restaurantId);
+const AccExpense     = (req) => getModel('AccExpense',     AccExpenseBaseModel.schema,     req.restaurantId);
+const AccParty       = (req) => getModel('AccParty',       AccPartyBaseModel.schema,       req.restaurantId);
+
+const sumLedger = async (filter, reqCtx) => {
+  const res = await AccLedgerEntry(reqCtx).aggregate([
     { $match: filter },
     { $group: { _id: null, totalDebit: { $sum: '$debit' }, totalCredit: { $sum: '$credit' } } },
   ]);
@@ -19,16 +27,16 @@ const getProfitLoss = async (req, res) => {
     const { from, to } = req.query;
     const dateFilter = buildDateFilter(from, to);
 
-    const incomeAccs = await AccAccount.find({ type: 'Income' });
-    const expenseAccs = await AccAccount.find({ type: 'Expense' });
+    const incomeAccs = await AccAccount(req).find({ type: 'Income' });
+    const expenseAccs = await AccAccount(req).find({ type: 'Expense' });
 
     const incomeRows = await Promise.all(incomeAccs.map(async (acc) => {
-      const s = await sumLedger({ account: acc._id, ...dateFilter });
+      const s = await sumLedger({ account: acc._id, ...dateFilter }, req);
       const amount = s.totalCredit - s.totalDebit; // income: credit normal
       return { _id: acc._id, name: acc.name, subType: acc.subType, amount };
     }));
     const expenseRows = await Promise.all(expenseAccs.map(async (acc) => {
-      const s = await sumLedger({ account: acc._id, ...dateFilter });
+      const s = await sumLedger({ account: acc._id, ...dateFilter }, req);
       const amount = s.totalDebit - s.totalCredit; // expense: debit normal
       return { _id: acc._id, name: acc.name, subType: acc.subType, amount };
     }));
@@ -46,9 +54,9 @@ const getProfitLoss = async (req, res) => {
 // @route GET /api/acc/reports/balance-sheet
 const getBalanceSheet = async (req, res) => {
   try {
-    const assetAccs = await AccAccount.find({ type: 'Asset' });
-    const liabilityAccs = await AccAccount.find({ type: 'Liability' });
-    const equityAccs = await AccAccount.find({ type: 'Equity' });
+    const assetAccs = await AccAccount(req).find({ type: 'Asset' });
+    const liabilityAccs = await AccAccount(req).find({ type: 'Liability' });
+    const equityAccs = await AccAccount(req).find({ type: 'Equity' });
 
     const mapAccs = (accs) => accs.map(a => ({
       _id: a._id,
@@ -124,22 +132,22 @@ const getDailyClosing = async (req, res) => {
     const to = new Date(new Date(dateStr).setHours(23, 59, 59, 999));
     const dateFilter = { date: { $gte: from, $lte: to } };
 
-    const cashAcc = await AccAccount.findOne({ code: '1001' });
+    const cashAcc = await AccAccount(req).findOne({ code: '1001' });
     const cashBalance = cashAcc ? cashAcc.balance : 0;
 
-    const salesSum = await sumLedger({ account: (await AccAccount.findOne({ code: '4001' }))?._id, ...dateFilter });
+    const salesSum = await sumLedger({ account: (await AccAccount(req).findOne({ code: '4001' }, req))?._id, ...dateFilter });
     const totalSales = salesSum.totalCredit - salesSum.totalDebit;
 
-    const expenseAccs = await AccAccount.find({ type: 'Expense' });
+    const expenseAccs = await AccAccount(req).find({ type: 'Expense' });
     let totalExpenses = 0;
     for (const acc of expenseAccs) {
-      const s = await sumLedger({ account: acc._id, ...dateFilter });
+      const s = await sumLedger({ account: acc._id, ...dateFilter }, req);
       totalExpenses += s.totalDebit - s.totalCredit;
     }
 
-    const orders = await AccOrder.countDocuments({ date: { $gte: from, $lte: to } });
-    const purchases = await AccPurchase.countDocuments({ date: { $gte: from, $lte: to } });
-    const expenses = await AccExpense.countDocuments({ date: { $gte: from, $lte: to } });
+    const orders = await AccOrder(req).countDocuments({ date: { $gte: from, $lte: to } });
+    const purchases = await AccPurchase(req).countDocuments({ date: { $gte: from, $lte: to } });
+    const expenses = await AccExpense(req).countDocuments({ date: { $gte: from, $lte: to } });
 
     res.json({ date: dateStr, cashInHand: cashBalance, totalSales, totalExpenses, orders, purchases, expenses });
   } catch (err) {
@@ -150,13 +158,13 @@ const getDailyClosing = async (req, res) => {
 // @route GET /api/acc/reports/party/:id — party ledger / statement
 const getPartyStatement = async (req, res) => {
   try {
-    const party = await AccParty.findById(req.params.id);
+    const party = await AccParty(req).findById(req.params.id);
     if (!party) return res.status(404).json({ message: 'Party not found' });
 
     const [orders, purchases, expenses] = await Promise.all([
-      AccOrder.find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
-      AccPurchase.find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
-      AccExpense.find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
+      AccOrder(req).find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
+      AccPurchase(req).find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
+      AccExpense(req).find({ party: req.params.id }).populate('ledgerEntries').sort({ date: -1 }),
     ]);
 
     res.json({ party, orders, purchases, expenses });

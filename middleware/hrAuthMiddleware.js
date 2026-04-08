@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const HRStaff = require('../models/HRStaff');
+const { tenantStorage } = require('../utils/tenantPlugin');
 
 /**
  * Middleware: Protect HR routes — verifies JWT issued by HR login.
@@ -22,6 +23,9 @@ const protectHR = async (req, res, next) => {
     if (!staff) return res.status(401).json({ message: 'Staff not found, please login again' });
     if (staff.status !== 'active') return res.status(403).json({ message: 'Account inactive' });
     req.hrStaff = staff;
+    // Wrap in tenant context
+    const rid = staff.restaurantId;
+    if (rid) return tenantStorage.run({ restaurantId: rid.toUpperCase() }, () => next());
     return next();
   } catch (err) {
     if (err.name === 'TokenExpiredError')
@@ -87,6 +91,8 @@ const protectAny = async (req, res, next) => {
     const hrStaff = await HRStaff.findById(decoded.id).select('-password');
     if (hrStaff && hrStaff.status === 'active') {
       req.hrStaff = hrStaff;
+      const rid = hrStaff.restaurantId;
+      if (rid) return tenantStorage.run({ restaurantId: rid.toUpperCase() }, () => next());
       return next();
     }
 
@@ -95,6 +101,8 @@ const protectAny = async (req, res, next) => {
     const user = await User.findById(decoded.id).select('-password');
     if (user) {
       req.user = user;
+      const rid = user.restaurantId;
+      if (rid) return tenantStorage.run({ restaurantId: rid.toUpperCase() }, () => next());
       return next();
     }
 

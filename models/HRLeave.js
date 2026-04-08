@@ -36,4 +36,5 @@ hrLeaveSchema.pre('save', function () {
   }
 });
 
+
 module.exports = mongoose.model('HRLeave', hrLeaveSchema);

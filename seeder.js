@@ -50,6 +50,7 @@ const Offer = require("./models/Offer");
 const Order = require("./models/Order");
 const Bill = require("./models/Bill");
 const Category = require("./models/Category");
+const SuperAdmin = require("./models/SuperAdmin");
 const connectDB = require("./config/db");
 
 dotenv.config();
@@ -79,6 +80,17 @@ const importData = async () => {
 
     await Category.insertMany(categories);
     console.log("Categories Seeded!");
+
+    // ── Super Admin — always reset to known credentials ──────────────────────
+    await SuperAdmin.deleteMany();
+    await SuperAdmin.create({
+      name:     "Super Admin",
+      email:    "superadmin@platform.com",
+      password: "SuperAdmin@123",
+    });
+    console.log("Super Admin Created!");
+    console.log("  Email   : superadmin@platform.com");
+    console.log("  Password: SuperAdmin@123");
 
     // Add a default admin user
     const adminUser = await User.create({
@@ -127,6 +139,8 @@ const destroyData = async () => {
     await Order.deleteMany();
     await Product.deleteMany();
     await User.deleteMany();
+    await SuperAdmin.deleteMany();
+    await Category.deleteMany();
 
     console.log("Data Destroyed!");
     process.exit();

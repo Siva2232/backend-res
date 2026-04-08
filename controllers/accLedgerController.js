@@ -1,5 +1,9 @@
-const AccLedgerEntry = require('../models/AccLedgerEntry');
-const AccAccount = require('../models/AccAccount');
+const AccLedgerEntryBaseModel = require('../models/AccLedgerEntry');
+const { getModel } = require('../utils/getModel');
+
+const AccLedgerEntry = (req) => getModel('AccLedgerEntry', AccLedgerEntryBaseModel.schema, req.restaurantId);
+const AccAccountBaseModel2 = require('../models/AccAccount');
+const AccAccount = (req) => getModel('AccAccount', AccAccountBaseModel2.schema, req.restaurantId);
 
 // @route GET /api/acc/ledger
 const getLedgerEntries = async (req, res) => {
@@ -15,8 +19,8 @@ const getLedgerEntries = async (req, res) => {
       if (from) query.date.$gte = new Date(from);
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
-    const total = await AccLedgerEntry.countDocuments(query);
-    const entries = await AccLedgerEntry.find(query)
+    const total = await AccLedgerEntry(req).countDocuments(query);
+    const entries = await AccLedgerEntry(req).find(query)
       .populate('account', 'name code type subType')
       .populate('party', 'name')
       .sort({ date: -1, createdAt: -1 })
@@ -32,7 +36,7 @@ const getLedgerEntries = async (req, res) => {
 const getAccountStatement = async (req, res) => {
   try {
     const { from, to } = req.query;
-    const acc = await AccAccount.findById(req.params.id);
+    const acc = await AccAccount(req).findById(req.params.id);
     if (!acc) return res.status(404).json({ message: 'Account not found' });
 
     const query = { account: req.params.id };
@@ -41,7 +45,7 @@ const getAccountStatement = async (req, res) => {
       if (from) query.date.$gte = new Date(from);
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
-    const entries = await AccLedgerEntry.find(query)
+    const entries = await AccLedgerEntry(req).find(query)
       .populate('party', 'name')
       .sort({ date: 1, createdAt: 1 });
 

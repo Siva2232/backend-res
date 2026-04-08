@@ -5,7 +5,6 @@ const tableSchema = mongoose.Schema(
     tableId: {
       type: Number,
       required: true,
-      unique: true,
     },
     capacity: {
       type: Number,
@@ -21,6 +20,9 @@ const tableSchema = mongoose.Schema(
   }
 );
 
+tableSchema.index({ restaurantId: 1, tableId: 1 }, { unique: true });
+
 const Table = mongoose.model("Table", tableSchema);
+module.exports = Table;
 
 module.exports = Table;

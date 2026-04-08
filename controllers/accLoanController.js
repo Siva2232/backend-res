@@ -1,4 +1,7 @@
-const AccLoan = require('../models/AccLoan');
+const AccLoanBaseModel = require('../models/AccLoan');
+const { getModel } = require('../utils/getModel');
+
+const AccLoan = (req) => getModel('AccLoan', AccLoanBaseModel.schema, req.restaurantId);
 const { buildLoanEntries, createLedgerEntries, reverseLedgerEntries } = require('../utils/accLedgerUtils');
 
 // @route GET /api/acc/loans
@@ -14,8 +17,8 @@ const getLoans = async (req, res) => {
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
     if (search) query.loanNo = { $regex: search, $options: 'i' };
-    const total = await AccLoan.countDocuments(query);
-    const loans = await AccLoan.find(query)
+    const total = await AccLoan(req).countDocuments(query);
+    const loans = await AccLoan(req).find(query)
       .populate('party', 'name phone type')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -29,7 +32,7 @@ const getLoans = async (req, res) => {
 // @route GET /api/acc/loans/:id
 const getLoan = async (req, res) => {
   try {
-    const loan = await AccLoan.findById(req.params.id)
+    const loan = await AccLoan(req).findById(req.params.id)
       .populate('party', 'name phone email address')
       .populate('ledgerEntries');
     if (!loan) return res.status(404).json({ message: 'Loan/Advance not found' });
@@ -43,7 +46,7 @@ const getLoan = async (req, res) => {
 const createLoan = async (req, res) => {
   try {
     const { type, amount, paymentMode, date, party: partyId, ...rest } = req.body;
-    const loan = await AccLoan.create({ ...rest, type, amount, paymentMode, date, party: partyId });
+    const loan = await AccLoan(req).create({ ...rest, type, amount, paymentMode, date, party: partyId });
     const entries = await buildLoanEntries({ type, amount, paymentMode, date: date ? new Date(date) : new Date() });
     const saved = await createLedgerEntries(entries, 'AccLoan', loan._id, partyId);
     loan.ledgerEntries = saved.map(e => e._id);
@@ -57,7 +60,7 @@ const createLoan = async (req, res) => {
 // @route PUT /api/acc/loans/:id
 const updateLoan = async (req, res) => {
   try {
-    const loan = await AccLoan.findById(req.params.id);
+    const loan = await AccLoan(req).findById(req.params.id);
     if (!loan) return res.status(404).json({ message: 'Loan/Advance not found' });
 
     await reverseLedgerEntries(loan.ledgerEntries);
@@ -77,7 +80,7 @@ const updateLoan = async (req, res) => {
 // @route DELETE /api/acc/loans/:id
 const deleteLoan = async (req, res) => {
   try {
-    const loan = await AccLoan.findById(req.params.id);
+    const loan = await AccLoan(req).findById(req.params.id);
     if (!loan) return res.status(404).json({ message: 'Loan/Advance not found' });
     await reverseLedgerEntries(loan.ledgerEntries);
     await loan.deleteOne();

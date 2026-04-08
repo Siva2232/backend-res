@@ -11,4 +11,5 @@ const bannerSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Banner", bannerSchema);
+const Banner = mongoose.model("Banner", bannerSchema);
+module.exports = Banner;

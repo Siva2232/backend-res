@@ -1,6 +1,11 @@
-const HRAttendance = require('../models/HRAttendance');
-const HRStaff = require('../models/HRStaff');
-const Settings = require('../models/Settings');
+const HRAttendanceModel = require('../models/HRAttendance');
+const { getModel } = require('../utils/getModel');
+
+const HRAttendance = (req) => getModel('HRAttendance', HRAttendanceModel.schema, req.restaurantId);
+const HRStaffModel2 = require('../models/HRStaff');
+const HRStaff = (req) => getModel('HRStaff', HRStaffModel2.schema, req.restaurantId);
+const SettingsModel = require('../models/Settings');
+const Settings = (req) => getModel('Settings', SettingsModel.schema, req.restaurantId);
 const { emitUpdate } = require('../utils/socketUtils');
 
 // Haversine distance in metres between two lat/lng points
@@ -57,8 +62,8 @@ const getAttendance = async (req, res) => {
       query.date = { $gte: start, $lte: end };
     }
 
-    const total = await HRAttendance.countDocuments(query);
-    const records = await HRAttendance.find(query)
+    const total = await HRAttendance(req).countDocuments(query);
+    const records = await HRAttendance(req).find(query)
       .populate('staff', 'name email department designation')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -124,7 +129,7 @@ const updateAttendance = async (req, res) => {
       if (workHours < 0) workHours += 24;
     }
 
-    const record = await HRAttendance.findByIdAndUpdate(
+    const record = await HRAttendance(req).findByIdAndUpdate(
       req.params.id,
       { status, checkIn, checkOut, workHours, note },
       { new: true, runValidators: true }
@@ -161,7 +166,7 @@ const getAttendanceSummary = async (req, res) => {
     const start = new Date(Date.UTC(y, m - 1, 1));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
 
-    const records = await HRAttendance.find({
+    const records = await HRAttendance(req).find({
       staff: req.params.staffId,
       date: { $gte: start, $lte: end },
     });
@@ -207,7 +212,7 @@ const getMyAttendance = async (req, res) => {
     const start = new Date(Date.UTC(y, m - 1, 1));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
 
-    const records = await HRAttendance.find({
+    const records = await HRAttendance(req).find({
       staff: staffId,
       date: { $gte: start, $lte: end },
     }).sort({ date: 1 });
@@ -231,7 +236,7 @@ const getMyAttendance = async (req, res) => {
 // @route GET /api/hr/attendance/location-config
 const getAttendanceLocation = async (req, res) => {
   try {
-    const setting = await Settings.findOne({ key: 'attendance_location' });
+    const setting = await Settings(req).findOne({ key: 'attendance_location' });
     res.json(setting ? setting.value : null);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -247,7 +252,7 @@ const setAttendanceLocation = async (req, res) => {
       return res.status(400).json({ message: 'lat and lng are required' });
     }
     const value = { lat: Number(lat), lng: Number(lng), radius: Number(radius), label: label || '' };
-    const setting = await Settings.findOneAndUpdate(
+    const setting = await Settings(req).findOneAndUpdate(
       { key: 'attendance_location' },
       { key: 'attendance_location', value },
       { upsert: true, new: true }
@@ -284,7 +289,7 @@ const locationAttendance = async (req, res) => {
     }
 
     // Verify against the admin-set location
-    const setting = await Settings.findOne({ key: 'attendance_location' });
+    const setting = await Settings(req).findOne({ key: 'attendance_location' });
     if (!setting || !setting.value) {
       return res.status(400).json({ message: 'Attendance location has not been configured by admin yet.' });
     }
@@ -303,7 +308,7 @@ const locationAttendance = async (req, res) => {
     const staff = staffId;
     const { dateStr, checkTime } = nowIST(); // use IST, not server-local UTC
     const { start, end } = dayRange(dateStr);
-    const existing = await HRAttendance.findOne({ staff, date: { $gte: start, $lte: end } });
+    const existing = await HRAttendance(req).findOne({ staff, date: { $gte: start, $lte: end } });
 
     let update = {
       staff,
@@ -331,7 +336,7 @@ const locationAttendance = async (req, res) => {
     ).populate('staff', 'name email');
 
     const io = req.app.get('io');
-    if (io) io.emit('attendanceUpdate', record);
+    if (io && req.restaurantId) io.to(req.restaurantId).emit('attendanceUpdate', record);
 
     res.status(201).json({ record, distance: Math.round(distance) });
   } catch (err) {

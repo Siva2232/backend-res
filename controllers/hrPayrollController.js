@@ -1,6 +1,11 @@
-const HRPayroll = require('../models/HRPayroll');
-const HRStaff = require('../models/HRStaff');
-const HRAttendance = require('../models/HRAttendance');
+const HRPayrollModel = require('../models/HRPayroll');
+const { getModel } = require('../utils/getModel');
+
+const HRPayroll = (req) => getModel('HRPayroll', HRPayrollModel.schema, req.restaurantId);
+const HRStaffModel2 = require('../models/HRStaff');
+const HRStaff = (req) => getModel('HRStaff', HRStaffModel2.schema, req.restaurantId);
+const HRAttendanceModel2 = require('../models/HRAttendance');
+const HRAttendance = (req) => getModel('HRAttendance', HRAttendanceModel2.schema, req.restaurantId);
 const { sendPayslipEmail } = require('../services/emailService');
 const { generatePayslipPDF } = require('../services/payslipService');
 
@@ -14,14 +19,14 @@ const generatePayroll = async (req, res) => {
     if (!staffId || !month || !year)
       return res.status(400).json({ message: 'staffId, month and year are required' });
 
-    const staff = await HRStaff.findById(staffId);
+    const staff = await HRStaff(req).findById(staffId);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     // Pull attendance data for the month
     const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
     const end = new Date(Date.UTC(Number(year), Number(month), 0, 23, 59, 59, 999));
 
-    const attendance = await HRAttendance.find({
+    const attendance = await HRAttendance(req).find({
       staff: staffId,
       date: { $gte: start, $lte: end },
     });
@@ -61,7 +66,7 @@ const generatePayroll = async (req, res) => {
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     );
 
-    const populated = await HRPayroll.findById(payroll._id).populate('staff', 'name email designation department baseSalary');
+    const populated = await HRPayroll(req).findById(payroll._id).populate('staff', 'name email designation department baseSalary');
     res.status(201).json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -76,13 +81,13 @@ const generatePayrollAll = async (req, res) => {
     if (!month || !year)
       return res.status(400).json({ message: 'month and year are required' });
 
-    const allStaff = await HRStaff.find({ status: 'active' });
+    const allStaff = await HRStaff(req).find({ status: 'active' });
     const results = [];
 
     for (const staff of allStaff) {
       const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
       const end = new Date(Date.UTC(Number(year), Number(month), 0, 23, 59, 59, 999));
-      const attendance = await HRAttendance.find({ staff: staff._id, date: { $gte: start, $lte: end } });
+      const attendance = await HRAttendance(req).find({ staff: staff._id, date: { $gte: start, $lte: end } });
 
       let presentDays = 0, absentDays = 0, leaveDays = 0;
       attendance.forEach((a) => {
@@ -128,8 +133,8 @@ const getPayrolls = async (req, res) => {
     if (year) query.year = Number(year);
     if (status) query.status = status;
 
-    const total = await HRPayroll.countDocuments(query);
-    const payrolls = await HRPayroll.find(query)
+    const total = await HRPayroll(req).countDocuments(query);
+    const payrolls = await HRPayroll(req).find(query)
       .populate('staff', 'name email designation department')
       .sort({ year: -1, month: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -145,7 +150,7 @@ const getPayrolls = async (req, res) => {
 // @route GET /api/hr/payroll/:id
 const getPayrollById = async (req, res) => {
   try {
-    const payroll = await HRPayroll.findById(req.params.id)
+    const payroll = await HRPayroll(req).findById(req.params.id)
       .populate('staff', 'name email phone designation department joiningDate baseSalary avatar');
     if (!payroll) return res.status(404).json({ message: 'Payroll not found' });
     res.json(payroll);
@@ -159,14 +164,14 @@ const getPayrollById = async (req, res) => {
 const updatePayroll = async (req, res) => {
   try {
     const allowed = ['bonus', 'overtime', 'status', 'notes', 'paidAt'];
-    const payroll = await HRPayroll.findById(req.params.id);
+    const payroll = await HRPayroll(req).findById(req.params.id);
     if (!payroll) return res.status(404).json({ message: 'Payroll not found' });
     
     allowed.forEach((k) => { if (req.body[k] !== undefined) payroll[k] = req.body[k]; });
     if (payroll.status === 'paid' && !payroll.paidAt) payroll.paidAt = new Date();
 
     await payroll.save();
-    const populated = await HRPayroll.findById(payroll._id).populate('staff', 'name email designation department baseSalary');
+    const populated = await HRPayroll(req).findById(payroll._id).populate('staff', 'name email designation department baseSalary');
     res.json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -179,7 +184,7 @@ const updatePayroll = async (req, res) => {
 // @route POST /api/hr/payroll/:id/send-payslip
 const sendPayslip = async (req, res) => {
   try {
-    const payroll = await HRPayroll.findById(req.params.id)
+    const payroll = await HRPayroll(req).findById(req.params.id)
       .populate('staff', 'name email phone designation department joiningDate baseSalary');
     if (!payroll) return res.status(404).json({ message: 'Payroll not found' });
 
@@ -200,7 +205,7 @@ const sendPayslip = async (req, res) => {
 // @route GET /api/hr/payroll/:id/payslip-pdf
 const downloadPayslipPDF = async (req, res) => {
   try {
-    const payroll = await HRPayroll.findById(req.params.id)
+    const payroll = await HRPayroll(req).findById(req.params.id)
       .populate('staff', 'name email phone designation department joiningDate baseSalary');
     if (!payroll) return res.status(404).json({ message: 'Payroll not found' });
 
@@ -222,7 +227,7 @@ const downloadPayslipPDF = async (req, res) => {
 // @route GET /api/hr/payroll/mine
 const getMyPayrolls = async (req, res) => {
   try {
-    const payrolls = await HRPayroll.find({ staff: req.hrStaff._id })
+    const payrolls = await HRPayroll(req).find({ staff: req.hrStaff._id })
       .sort({ year: -1, month: -1 });
     res.json(payrolls);
   } catch (err) {

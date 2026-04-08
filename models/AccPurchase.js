@@ -26,13 +26,12 @@ const accPurchaseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accPurchaseSchema.pre('save', async function (next) {
+accPurchaseSchema.pre('save', async function () {
   if (this.isNew && !this.purchaseNo) {
     const last = await this.constructor.findOne({}, {}, { sort: { createdAt: -1 } });
     const num = last ? parseInt(last.purchaseNo?.replace('PO-', '') || 0) + 1 : 1;
     this.purchaseNo = `PO-${String(num).padStart(4, '0')}`;
   }
-  next();
 });
 
 module.exports = mongoose.model('AccPurchase', accPurchaseSchema);

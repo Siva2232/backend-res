@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const Reservation = require('../models/Reservation');
+const ReservationModel = require('../models/Reservation');
+const { getModel } = require('../utils/getModel');
+const Reservation = (req) => getModel('Reservation', ReservationModel.schema, req.restaurantId);
 
 // @desc    Get all reservations
 // @route   GET /api/reservations
@@ -22,7 +24,7 @@ router.get('/', async (req, res) => {
       query.status = status;
     }
 
-    const reservations = await Reservation.find(query).sort({ reservationTime: 1 });
+    const reservations = await Reservation(req).find(query).sort({ reservationTime: 1 });
     res.json(reservations);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -36,7 +38,7 @@ router.post('/', async (req, res) => {
   const { table, customerName, customerPhone, guests, reservationTime, notes } = req.body;
 
   try {
-    const reservation = new Reservation({
+    const reservation = new (Reservation(req))({
       table,
       customerName,
       customerPhone,
@@ -47,10 +49,9 @@ router.post('/', async (req, res) => {
 
     const createdReservation = await reservation.save();
 
-    // Emit socket event if io is available
     const io = req.app.get('io');
-    if (io) {
-      io.emit('newReservation', createdReservation);
+    if (io && req.restaurantId) {
+      io.to(req.restaurantId).emit('newReservation', createdReservation);
     }
 
     res.status(201).json(createdReservation);
@@ -64,7 +65,7 @@ router.post('/', async (req, res) => {
 // @access  Private/Staff
 router.put('/:id', async (req, res) => {
   try {
-    const reservation = await Reservation.findById(req.params.id);
+    const reservation = await Reservation(req).findById(req.params.id);
 
     if (reservation) {
       reservation.status = req.body.status || reservation.status;
@@ -76,8 +77,8 @@ router.put('/:id', async (req, res) => {
       const updatedReservation = await reservation.save();
       
       const io = req.app.get('io');
-      if (io) {
-        io.emit('reservationUpdated', updatedReservation);
+      if (io && req.restaurantId) {
+        io.to(req.restaurantId).emit('reservationUpdated', updatedReservation);
       }
       
       res.json(updatedReservation);
@@ -94,13 +95,13 @@ router.put('/:id', async (req, res) => {
 // @access  Private/Staff
 router.delete('/:id', async (req, res) => {
   try {
-    const reservation = await Reservation.findById(req.params.id);
+    const reservation = await Reservation(req).findById(req.params.id);
     if (reservation) {
       await reservation.deleteOne();
       
       const io = req.app.get('io');
-      if (io) {
-        io.emit('reservationDeleted', req.params.id);
+      if (io && req.restaurantId) {
+        io.to(req.restaurantId).emit('reservationDeleted', req.params.id);
       }
       
       res.json({ message: 'Reservation removed' });

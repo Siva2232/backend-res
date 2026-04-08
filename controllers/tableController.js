@@ -1,10 +1,13 @@
-const Table = require("../models/Table");
+const TableModel = require("../models/Table");
+const { getModel } = require("../utils/getModel");
+
+const Table = (req) => getModel("Table", TableModel.schema, req.restaurantId);
 
 // @desc    Get all tables
 // @route   GET /api/tables
 // @access  Private/Admin
 const getTables = async (req, res) => {
-  const tables = await Table.find({ isActive: true }).sort({ tableId: 1 });
+  const tables = await Table(req).find({ isActive: true }).sort({ tableId: 1 });
   res.json(tables.map(t => ({ id: t.tableId, capacity: t.capacity })));
 };
 
@@ -14,7 +17,7 @@ const getTables = async (req, res) => {
 const addTable = async (req, res) => {
   const { id, capacity } = req.body;
 
-  const tableExists = await Table.findOne({ tableId: id });
+  const tableExists = await Table(req).findOne({ tableId: id });
 
   if (tableExists) {
     if (tableExists.isActive) {
@@ -29,7 +32,7 @@ const addTable = async (req, res) => {
     }
   }
 
-  const table = await Table.create({
+  const table = await Table(req).create({
     tableId: id,
     capacity: capacity || 4,
   });
@@ -52,7 +55,7 @@ const removeTable = async (req, res) => {
     throw new Error("Invalid table id");
   }
 
-  const table = await Table.findOne({ tableId });
+  const table = await Table(req).findOne({ tableId });
 
   if (table) {
     table.isActive = false;

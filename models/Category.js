@@ -5,7 +5,6 @@ const categorySchema = mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
   },
@@ -13,6 +12,8 @@ const categorySchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+categorySchema.index({ restaurantId: 1, name: 1 }, { unique: true });
 
 const Category = mongoose.model("Category", categorySchema);
 

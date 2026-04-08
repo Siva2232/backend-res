@@ -39,4 +39,5 @@ const subItemSchema = new mongoose.Schema(
 // Index for bulk lookups
 subItemSchema.index({ category: 1 });
 
-module.exports = mongoose.model("SubItem", subItemSchema);
+const SubItem = mongoose.model("SubItem", subItemSchema);
+module.exports = SubItem;

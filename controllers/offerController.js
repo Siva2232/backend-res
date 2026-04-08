@@ -1,9 +1,11 @@
-const Offer = require("../models/Offer");
+const OfferModel = require("../models/Offer");
+const { getModel } = require("../utils/getModel");
+
+const Offer = (req) => getModel("Offer", OfferModel.schema, req.restaurantId);
 
 const getOffers = async (req, res) => {
-  // Increase cache-control for better performance, leveraging stale-while-revalidate for background updates
   res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
-  const offers = await Offer.find({ isPublished: true }).select(
+  const offers = await Offer(req).find({ isPublished: true }).select(
     "title description imageUrl tag"
   ).lean();
   res.json(offers);
@@ -14,14 +16,14 @@ const createOffer = async (req, res) => {
   if (!title || !description || !imageUrl) {
     return res.status(400).json({ message: "Missing required fields: title, description, imageUrl" });
   }
-  const offer = new Offer({ title, description, imageUrl, tag, isPublished });
+  const offer = new (Offer(req))({ title, description, imageUrl, tag, isPublished });
   const createdOffer = await offer.save();
   res.status(201).json(createdOffer);
 };
 
 const updateOffer = async (req, res) => {
   const { title, description, imageUrl, tag, isPublished } = req.body;
-  const offer = await Offer.findById(req.params.id);
+  const offer = await Offer(req).findById(req.params.id);
   if (offer) {
     offer.title = title || offer.title;
     offer.description = description || offer.description;
@@ -36,7 +38,7 @@ const updateOffer = async (req, res) => {
 };
 
 const deleteOffer = async (req, res) => {
-  const offer = await Offer.findById(req.params.id);
+  const offer = await Offer(req).findById(req.params.id);
   if (offer) {
     await offer.deleteOne();
     res.json({ message: "Offer removed" });

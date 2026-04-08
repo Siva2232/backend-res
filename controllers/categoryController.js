@@ -1,4 +1,7 @@
-const Category = require("../models/Category");
+const CategoryModel = require("../models/Category");
+const { getModel } = require("../utils/getModel");
+
+const Category = (req) => getModel("Category", CategoryModel.schema, req.restaurantId);
 
 // @desc    Fetch all categories
 // @route   GET /api/categories
@@ -6,7 +9,7 @@ const Category = require("../models/Category");
 const getCategories = async (req, res) => {
   try {
     res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
-    const categories = await Category.find({}).select("name").sort({ name: 1 }).lean();
+    const categories = await Category(req).find({}).select("name").sort({ name: 1 }).lean();
     res.json(categories);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -24,13 +27,13 @@ const createCategory = async (req, res) => {
       return res.status(400).json({ message: "Category name is required" });
     }
 
-    const categoryExists = await Category.findOne({ name });
+    const categoryExists = await Category(req).findOne({ name });
 
     if (categoryExists) {
       return res.status(400).json({ message: "Category already exists" });
     }
 
-    const category = new Category({ name });
+    const category = new (Category(req))({ name });
     const createdCategory = await category.save();
     res.status(201).json(createdCategory);
   } catch (error) {
@@ -43,10 +46,10 @@ const createCategory = async (req, res) => {
 // @access  Private/Admin
 const deleteCategory = async (req, res) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const category = await Category(req).findById(req.params.id);
 
     if (category) {
-      await Category.deleteOne({ _id: category._id });
+      await Category(req).deleteOne({ _id: category._id });
       res.json({ message: "Category removed" });
     } else {
       res.status(404).json({ message: "Category not found" });

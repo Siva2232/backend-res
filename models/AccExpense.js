@@ -22,13 +22,12 @@ const accExpenseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accExpenseSchema.pre('save', async function (next) {
+accExpenseSchema.pre('save', async function () {
   if (this.isNew && !this.expenseNo) {
     const last = await this.constructor.findOne({}, {}, { sort: { createdAt: -1 } });
     const num = last ? parseInt(last.expenseNo?.replace('EX-', '') || 0) + 1 : 1;
     this.expenseNo = `EX-${String(num).padStart(4, '0')}`;
   }
-  next();
 });
 
 module.exports = mongoose.model('AccExpense', accExpenseSchema);

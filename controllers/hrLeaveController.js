@@ -1,4 +1,9 @@
-const HRLeave = require('../models/HRLeave');
+const HRLeaveModel = require('../models/HRLeave');
+const { getModel } = require('../utils/getModel');
+
+const HRLeave = (req) => getModel('HRLeave', HRLeaveModel.schema, req.restaurantId);
+const HRStaffBaseModel = require('../models/HRStaff');
+const HRStaff = (req) => getModel('HRStaff', HRStaffBaseModel.schema, req.restaurantId);
 const { emitUpdate } = require('../utils/socketUtils');
 
 // @desc  Get leaves (admin: all, staff: own)
@@ -11,8 +16,8 @@ const getLeaves = async (req, res) => {
     if (status) query.status = status;
     if (type) query.type = type;
 
-    const total = await HRLeave.countDocuments(query);
-    const leaves = await HRLeave.find(query)
+    const total = await HRLeave(req).countDocuments(query);
+    const leaves = await HRLeave(req).find(query)
       .populate('staff', 'name email department')
       .populate('reviewedBy', 'name')
       .sort({ createdAt: -1 })
@@ -33,14 +38,12 @@ const applyLeave = async (req, res) => {
     if (!type || !startDate || !endDate || !reason)
       return res.status(400).json({ message: 'All fields are required' });
 
-    const HRStaff = require('../models/HRStaff');
-
     // Determine staff context for both HR and POS tokens
     let staffDoc = null;
     if (req.hrStaff) {
       staffDoc = req.hrStaff;
     } else if (req.user) {
-      staffDoc = await HRStaff.findOne({ email: req.user.email });
+      staffDoc = await HRStaff(req).findOne({ email: req.user.email });
       if (!staffDoc) return res.status(404).json({ message: 'No HR staff profile found for this account' });
     }
 
@@ -48,8 +51,8 @@ const applyLeave = async (req, res) => {
 
     const staffId = req.hrStaff?.role !== 'admin' ? staffDoc._id : (req.body.staffId || staffDoc._id);
 
-    const leave = await HRLeave.create({ staff: staffId, type, startDate, endDate, reason });
-    const populated = await HRLeave.findById(leave._id).populate('staff', 'name email');
+    const leave = await HRLeave(req).create({ staff: staffId, type, startDate, endDate, reason });
+    const populated = await HRLeave(req).findById(leave._id).populate('staff', 'name email');
     emitUpdate(req, 'leaveUpdate', populated);
     res.status(201).json(populated);
   } catch (err) {
@@ -62,7 +65,7 @@ const applyLeave = async (req, res) => {
 const updateLeave = async (req, res) => {
   try {
     const { status, reviewNote } = req.body;
-    const leave = await HRLeave.findById(req.params.id);
+    const leave = await HRLeave(req).findById(req.params.id);
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
 
     if (status) {
@@ -73,7 +76,7 @@ const updateLeave = async (req, res) => {
     if (reviewNote !== undefined) leave.reviewNote = reviewNote;
 
     await leave.save();
-    const populated = await HRLeave.findById(leave._id)
+    const populated = await HRLeave(req).findById(leave._id)
       .populate('staff', 'name email department')
       .populate('reviewedBy', 'name');
     emitUpdate(req, 'leaveUpdate', populated);
@@ -87,7 +90,7 @@ const updateLeave = async (req, res) => {
 // @route DELETE /api/hr/leaves/:id
 const deleteLeave = async (req, res) => {
   try {
-    const leave = await HRLeave.findById(req.params.id);
+    const leave = await HRLeave(req).findById(req.params.id);
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
     await leave.deleteOne();
     emitUpdate(req, 'leaveDelete', req.params.id);
@@ -107,8 +110,7 @@ const getMyLeaves = async (req, res) => {
     if (req.hrStaff) {
       staffId = req.hrStaff._id;
     } else if (req.user) {
-      const HRStaff = require('../models/HRStaff');
-      const staffDoc = await HRStaff.findOne({ email: req.user.email });
+      const staffDoc = await HRStaff(req).findOne({ email: req.user.email });
       if (!staffDoc) return res.status(404).json({ message: 'No HR staff profile found for this account' });
       staffId = staffDoc._id;
     } else {
@@ -118,7 +120,7 @@ const getMyLeaves = async (req, res) => {
     const query = { staff: staffId };
     if (status) query.status = status;
 
-    const leaves = await HRLeave.find(query)
+    const leaves = await HRLeave(req).find(query)
       .populate('reviewedBy', 'name')
       .sort({ createdAt: -1 });
     res.json(leaves);
