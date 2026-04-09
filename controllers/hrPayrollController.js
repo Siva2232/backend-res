@@ -60,7 +60,7 @@ const generatePayroll = async (req, res) => {
       generatedBy: req.hrStaff?._id || req.user?._id,
     };
 
-    const payroll = await HRPayroll.findOneAndUpdate(
+    const payroll = await (await HRPayroll(req)).findOneAndUpdate(
       { staff: staffId, month: Number(month), year: Number(year) },
       payrollData,
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
@@ -100,7 +100,7 @@ const generatePayrollAll = async (req, res) => {
       const dailyRate = staff.baseSalary / workingDays;
       const leaveDeduction = (absentDays + leaveDays) * dailyRate;
 
-      const payroll = await HRPayroll.findOneAndUpdate(
+      const payroll = await (await HRPayroll(req)).findOneAndUpdate(
         { staff: staff._id, month: Number(month), year: Number(year) },
         {
           staff: staff._id, month: Number(month), year: Number(year),

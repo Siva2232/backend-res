@@ -85,7 +85,7 @@ const getAgingReport = async (req, res) => {
   try {
     const { type = 'receivable' } = req.query;
     const isReceivable = type === 'receivable';
-    const Model = isReceivable ? AccOrder : AccPurchase;
+    const Model = isReceivable ? await AccOrder(req) : await AccPurchase(req);
 
     const unpaid = await Model.find({ status: { $in: ['Unpaid', 'Partial'] } })
       .populate('party', 'name phone')

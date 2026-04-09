@@ -64,7 +64,7 @@ const updateParty = async (req, res) => {
 // @route DELETE /api/acc/parties/:id
 const deleteParty = async (req, res) => {
   try {
-    const party = await AccParty.findByIdAndDelete(req.params.id);
+    const party = await (await AccParty(req)).findByIdAndDelete(req.params.id);
     if (!party) return res.status(404).json({ message: 'Party not found' });
     res.json({ message: 'Party deleted' });
   } catch (err) {

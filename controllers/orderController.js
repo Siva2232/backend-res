@@ -195,7 +195,7 @@ const addOrderItems = async (req, res) => {
         })();
 
         const kitchenBillPromise = (async () => {
-          const lastBatch = await Kitchen(await Bill(req)).findOne({ orderRef: updatedOrder._id })
+          const lastBatch = await (await KitchenBill(req)).findOne({ orderRef: updatedOrder._id })
             .sort({ batchNumber: -1 })
             .select("batchNumber")
             .lean();
@@ -203,7 +203,7 @@ const addOrderItems = async (req, res) => {
           
           const batchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
           
-          const kitchenBill = await Kitchen(await Bill(req)).create({
+          const kitchenBill = await (await KitchenBill(req)).create({
             orderRef: updatedOrder._id,
             batchNumber: nextBatchNumber,
             table: updatedOrder.table,
@@ -342,7 +342,7 @@ const addOrderItems = async (req, res) => {
       billDetails: createdOrder.billDetails,
       billedAt: createdOrder.createdAt,
     }),
-    Kitchen(await Bill(req)).create({
+    (await KitchenBill(req)).create({
       orderRef: createdOrder._id,
       batchNumber: 1,
       table: createdOrder.table,
@@ -420,7 +420,7 @@ const updateOrderStatus = async (req, res) => {
       const bills = await (await Bill(req)).find({ orderRef: order._id });
       const io = req.app.get('io');
       if (io) {
-        bills.forEach((bill) => io.emit('billUpdated', bill));
+        bills.forEach((bill) => io.to(req.restaurantId).emit('billUpdated', bill));
       }
     } catch (billError) {
       console.error("Failed to update related bill status:", billError);
@@ -431,7 +431,7 @@ const updateOrderStatus = async (req, res) => {
   // emit update event so frontends can react immediately
   const io = req.app.get('io');
   if (io) {
-    io.emit('orderUpdated', updatedOrder);
+    io.to(req.restaurantId).emit('orderUpdated', updatedOrder);
   }
 
   res.json(updatedOrder);

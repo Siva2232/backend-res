@@ -2,12 +2,12 @@ const AccAccountBaseModel = require('../models/AccAccount');
 const { getModel } = require('../utils/getModel');
 
 const AccAccount = async (req) => getModel('AccAccount', AccAccountBaseModel.schema, req.restaurantId);
-const { seedAccounts } = require('../utils/accSeeder');
+const { seedAccountsForRestaurant } = require('../utils/accSeeder');
 
 // @route POST /api/acc/accounts/seed
 const seedChartOfAccounts = async (req, res) => {
   try {
-    await seedAccounts();
+    await seedAccountsForRestaurant(req.restaurantId);
     res.json({ message: 'Chart of Accounts seeded successfully.' });
   } catch (err) {
     res.status(500).json({ message: err.message });

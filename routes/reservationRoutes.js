@@ -53,7 +53,7 @@ router.post('/', async (req, res) => {
     // Emit socket event if io is available
     const io = req.app.get('io');
     if (io) {
-      io.emit('newReservation', createdReservation);
+      io.to(req.restaurantId).emit('newReservation', createdReservation);
     }
 
     res.status(201).json(createdReservation);
@@ -81,7 +81,7 @@ router.put('/:id', async (req, res) => {
       
       const io = req.app.get('io');
       if (io) {
-        io.emit('reservationUpdated', updatedReservation);
+        io.to(req.restaurantId).emit('reservationUpdated', updatedReservation);
       }
       
       res.json(updatedReservation);
@@ -105,7 +105,7 @@ router.delete('/:id', async (req, res) => {
       
       const io = req.app.get('io');
       if (io) {
-        io.emit('reservationDeleted', req.params.id);
+        io.to(req.restaurantId).emit('reservationDeleted', req.params.id);
       }
       
       res.json({ message: 'Reservation removed' });

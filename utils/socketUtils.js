@@ -9,7 +9,7 @@ const emitUpdate = (req, event, data) => {
     if (room) {
       io.to(room).emit(event, data);
     } else {
-      io.emit(event, data);
+      console.warn(`[socketUtils] emitUpdate called without restaurantId for event "${event}"`);
     }
   }
 };

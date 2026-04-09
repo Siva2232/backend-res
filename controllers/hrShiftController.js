@@ -53,7 +53,7 @@ const createShift = async (req, res) => {
 
     // Update currentShift on assigned staff
     if (finalStaff.length > 0) {
-      await HRStaff.updateMany({ _id: { $in: finalStaff } }, { currentShift: shift._id });
+      await (await HRStaff(req)).updateMany({ _id: { $in: finalStaff } }, { currentShift: shift._id });
     }
 
     const populated = (await HRShift(req)).findById(shift._id)
@@ -89,12 +89,12 @@ const updateShift = async (req, res) => {
       // Find staff removed
       const removed = oldStaffIds.filter(id => !finalStaffIds.includes(id));
       if (removed.length > 0) {
-        await HRStaff.updateMany({ _id: { $in: removed } }, { $unset: { currentShift: '' } });
+        await (await HRStaff(req)).updateMany({ _id: { $in: removed } }, { $unset: { currentShift: '' } });
       }
 
       // Set shift on newly assigned
       if (finalStaffIds.length > 0) {
-        await HRStaff.updateMany({ _id: { $in: finalStaffIds } }, { currentShift: old._id });
+        await (await HRStaff(req)).updateMany({ _id: { $in: finalStaffIds } }, { currentShift: old._id });
       }
       
       finalStaff = finalStaffIds; // Use normalized IDs for update
@@ -125,7 +125,7 @@ const deleteShift = async (req, res) => {
 
     // Clear currentShift on assigned staff
     if (shift.assignedStaff.length > 0) {
-      await HRStaff.updateMany({ _id: { $in: shift.assignedStaff } }, { $unset: { currentShift: '' } });
+      await (await HRStaff(req)).updateMany({ _id: { $in: shift.assignedStaff } }, { $unset: { currentShift: '' } });
     }
     await shift.deleteOne();
     res.json({ message: 'Shift deleted' });
@@ -149,7 +149,7 @@ const assignStaffToShift = async (req, res) => {
     ).populate('assignedStaff', 'name email designation department');
 
     if (!shift) return res.status(404).json({ message: 'Shift not found' });
-    await HRStaff.updateMany({ _id: { $in: staffIds } }, { currentShift: shift._id });
+    await (await HRStaff(req)).updateMany({ _id: { $in: staffIds } }, { currentShift: shift._id });
     res.json(shift);
   } catch (err) {
     res.status(400).json({ message: err.message });

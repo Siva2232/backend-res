@@ -58,7 +58,7 @@ const createSubItem = async (req, res) => {
       );
       
       const io = req.app.get('io');
-      if (io) io.emit('subItemsUpdated');
+      if (io) io.to(req.restaurantId).emit('subItemsUpdated');
 
       return res.status(201).json(createdItems);
     }
@@ -76,7 +76,7 @@ const createSubItem = async (req, res) => {
     });
     
     const io = req.app.get('io');
-    if (io) io.emit('subItemsUpdated');
+    if (io) io.to(req.restaurantId).emit('subItemsUpdated');
     
     res.status(201).json(item);
   } catch (err) {
@@ -152,9 +152,9 @@ const updateSubItem = async (req, res) => {
       // Broadcast update to all clients to refresh products instantly
       const io = req.app.get('io');
       if (io) {
-        io.emit('subItemUpdated', updated);
-        io.emit('productsUpdated');
-        io.emit('subItemsUpdated');
+        io.to(req.restaurantId).emit('subItemUpdated', updated);
+        io.to(req.restaurantId).emit('productsUpdated');
+        io.to(req.restaurantId).emit('subItemsUpdated');
       }
     }
 
@@ -194,9 +194,9 @@ const deleteSubItem = async (req, res) => {
     // Broadcast update to all clients to refresh products instantly
     const io = req.app.get('io');
     if (io) {
-      io.emit('subItemDeleted', { id: req.params.id, type, name: oldName });
-      io.emit('productsUpdated');
-      io.emit('subItemsUpdated');
+      io.to(req.restaurantId).emit('subItemDeleted', { id: req.params.id, type, name: oldName });
+      io.to(req.restaurantId).emit('productsUpdated');
+      io.to(req.restaurantId).emit('subItemsUpdated');
     }
 
     res.json({ message: "Sub-item removed" });
@@ -234,9 +234,9 @@ const updateSubItemStatus = async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('subItemUpdated', updated);
-      io.emit('productsUpdated');
-      io.emit('subItemsUpdated');
+      io.to(req.restaurantId).emit('subItemUpdated', updated);
+      io.to(req.restaurantId).emit('productsUpdated');
+      io.to(req.restaurantId).emit('subItemsUpdated');
     }
 
     res.json(updated);

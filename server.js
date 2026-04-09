@@ -109,13 +109,29 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
 // Global restaurantId extraction middleware
-// Extracts restaurantId from query params or headers for ALL requests.
-// Auth middleware may override this with the JWT-based restaurantId.
+// Priority: query param → x-restaurant-id header → JWT bearer token
+// Auth middleware may further override this with the JWT-based restaurantId.
+const _jwt = require('jsonwebtoken');
 app.use((req, res, next) => {
+  // 1. Query param or explicit header
   const rid = req.query.restaurantId || req.headers['x-restaurant-id'];
-  if (rid && !req.restaurantId) {
+  if (rid) {
     req.restaurantId = String(rid).toUpperCase().trim();
   }
+
+  // 2. Fall back to JWT token if no query param was provided
+  if (!req.restaurantId) {
+    try {
+      const auth = req.headers.authorization;
+      if (auth && auth.startsWith('Bearer ')) {
+        const decoded = _jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+        if (decoded.restaurantId) {
+          req.restaurantId = String(decoded.restaurantId).toUpperCase().trim();
+        }
+      }
+    } catch (_) { /* invalid / expired token — ignore */ }
+  }
+
   next();
 });
 
@@ -169,29 +185,37 @@ app.get("/", (req, res) => {
   res.send("API is running...");
 });
 
-app.use("/api/products", productRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/bills", billRoutes);
-app.use("/api/kitchen-bills", kitchenBillRoutes);
+// ─── Tenant-isolated routes ───────────────────────────────────────────────
+// Every route below uses tenantMiddleware so each restaurant gets its OWN
+// data (products, orders, bills, kitchen bills, tables, etc.).
+// tenantMiddleware validates restaurantId is present, the restaurant exists,
+// and is active. It sets req.restaurantId + req.restaurant for controllers.
+app.use("/api/products", tenantMiddleware, productRoutes);
+app.use("/api/orders", tenantMiddleware, orderRoutes);
+app.use("/api/bills", tenantMiddleware, billRoutes);
+app.use("/api/kitchen-bills", tenantMiddleware, kitchenBillRoutes);
+app.use("/api/banners", tenantMiddleware, bannerRoutes);
+app.use("/api/offers", tenantMiddleware, offerRoutes);
+app.use("/api/categories", tenantMiddleware, categoryRoutes);
+app.use("/api/payment", tenantMiddleware, paymentRoutes);
+app.use("/api/sub-items", tenantMiddleware, subItemRoutes);
+app.use("/api/tables", tenantMiddleware, tableRoutes);
+app.use("/api/notifications", tenantMiddleware, notificationRoutes);
+app.use("/api/reservations", tenantMiddleware, reservationRoutes);
+
+// ─── Non-tenant routes (platform-level) ──────────────────────────────────
+// Auth uses the shared User collection (no per-restaurant DB needed)
 app.use("/api/auth", authRoutes);
-app.use("/api/banners", bannerRoutes);
-app.use("/api/offers", offerRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/payment", paymentRoutes);
-app.use("/api/sub-items", subItemRoutes);
-app.use("/api/tables", tableRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/reservations", reservationRoutes);
 // HR Module Routes — feature guard applied inside routes that need it
 // (HR staff /login is public, so we can't guard at app.use level)
-app.use("/api/hr/staff", hrStaffRoutes);
-app.use("/api/hr/attendance", hrAttendanceRoutes);
-app.use("/api/hr/leaves", hrLeaveRoutes);
-app.use("/api/hr/shifts", hrShiftRoutes);
-app.use("/api/hr/payroll", hrPayrollRoutes);
+app.use("/api/hr/staff", tenantMiddleware, hrStaffRoutes);
+app.use("/api/hr/attendance", tenantMiddleware, hrAttendanceRoutes);
+app.use("/api/hr/leaves", tenantMiddleware, hrLeaveRoutes);
+app.use("/api/hr/shifts", tenantMiddleware, hrShiftRoutes);
+app.use("/api/hr/payroll", tenantMiddleware, hrPayrollRoutes);
 // Accounting / Tally Module Routes — all routes require auth already via router.use(protect)
-app.use("/api/acc", accRoutes);
-// SaaS Multi-Tenant Routes
+app.use("/api/acc", tenantMiddleware, accRoutes);
+// SaaS Multi-Tenant Routes (platform-level, no per-restaurant DB)
 app.use("/api/restaurants", restaurantRoutes);
 app.use("/api/plans", subscriptionPlanRoutes);
 app.use("/api/superadmin", superAdminRoutes);

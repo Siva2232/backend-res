@@ -86,8 +86,8 @@ const createProduct = async (req, res) => {
     // Broadcast creation to all clients
     const io = req.app.get('io');
     if (io) {
-      io.emit('productUpdated', createdProduct);
-      io.emit('productsUpdated');
+      io.to(req.restaurantId).emit('productUpdated', createdProduct);
+      io.to(req.restaurantId).emit('productsUpdated');
     }
 
     res.status(201).json(createdProduct);
@@ -138,8 +138,8 @@ const updateProduct = async (req, res) => {
       // Broadcast update to all clients to refresh products instantly
       const io = req.app.get('io');
       if (io) {
-        io.emit('productUpdated', product); // Emit the specific product that was updated
-        io.emit('productsUpdated'); // General event for bulk refresh if needed
+        io.to(req.restaurantId).emit('productUpdated', product); // Emit the specific product that was updated
+        io.to(req.restaurantId).emit('productsUpdated'); // General event for bulk refresh if needed
       }
 
       res.json(product);
@@ -166,8 +166,8 @@ const deleteProduct = async (req, res) => {
     // Broadcast deletion to all clients
     const io = req.app.get('io');
     if (io) {
-      io.emit('productDeleted', productId);
-      io.emit('productsUpdated');
+      io.to(req.restaurantId).emit('productDeleted', productId);
+      io.to(req.restaurantId).emit('productsUpdated');
     }
     
     res.json({ message: "Product removed" });

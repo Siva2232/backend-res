@@ -99,7 +99,7 @@ const markAttendance = async (req, res) => {
         if (workHours < 0) workHours += 24; // crosses midnight
       }
 
-      const record = await HRAttendance.findOneAndUpdate(
+      const record = await (await HRAttendance(req)).findOneAndUpdate(
         { staff, date: { $gte: start, $lte: end } },
         { staff, date: start, status: status || 'present', checkIn, checkOut, workHours, note,
           markedBy: req.hrStaff?._id || req.user?._id },
@@ -146,7 +146,7 @@ const updateAttendance = async (req, res) => {
 // @route DELETE /api/hr/attendance/:id
 const deleteAttendance = async (req, res) => {
   try {
-    const record = await HRAttendance.findByIdAndDelete(req.params.id);
+    const record = await (await HRAttendance(req)).findByIdAndDelete(req.params.id);
     if (!record) return res.status(404).json({ message: 'Record not found' });
     emitUpdate(req, 'attendanceDelete', req.params.id);
     res.json({ message: 'Record deleted' });
@@ -198,7 +198,7 @@ const getMyAttendance = async (req, res) => {
     if (req.hrStaff) {
       staffId = req.hrStaff._id;
     } else if (req.user) {
-      const hrStaff = await HRStaff.findOne({ email: req.user.email });
+      const hrStaff = await (await HRStaff(req)).findOne({ email: req.user.email });
       if (!hrStaff) return res.status(404).json({ message: 'No HR staff profile found for this account.' });
       staffId = hrStaff._id;
     } else {
@@ -272,7 +272,7 @@ const locationAttendance = async (req, res) => {
     if (req.hrStaff) {
       staffId = req.hrStaff._id;
     } else if (req.user) {
-      const hrStaff = await HRStaff.findOne({ email: req.user.email });
+      const hrStaff = await (await HRStaff(req)).findOne({ email: req.user.email });
       if (!hrStaff) {
         return res.status(404).json({
           message: 'No HR staff profile found for this account. Please ask admin to create your staff profile.',
@@ -329,14 +329,14 @@ const locationAttendance = async (req, res) => {
       update.checkIn = checkTime;
     }
 
-    const record = await HRAttendance.findOneAndUpdate(
+    const record = await (await HRAttendance(req)).findOneAndUpdate(
       { staff, date: { $gte: start, $lte: end } },
       update,
       { upsert: true, new: true }
     ).populate('staff', 'name email');
 
     const io = req.app.get('io');
-    if (io) io.emit('attendanceUpdate', record);
+    if (io) io.to(req.restaurantId).emit('attendanceUpdate', record);
 
     res.status(201).json({ record, distance: Math.round(distance) });
   } catch (err) {
