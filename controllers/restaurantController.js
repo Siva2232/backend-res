@@ -3,6 +3,7 @@ const SubscriptionPlan = require("../models/SubscriptionPlan");
 const User = require("../models/User");
 const cloudinary = require("cloudinary").v2;
 const { seedAccountsForRestaurant } = require("../utils/accSeeder");
+const { clearTenantCache } = require("../middleware/tenantMiddleware");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: auto-generate next restaurantId (RESTO001, RESTO002 …)
@@ -276,6 +277,7 @@ const assignPlan = async (req, res) => {
     }
 
     await restaurant.save();
+    clearTenantCache(restaurant.restaurantId); // Instantly propagate plan/status change
     res.json({ message: "Plan assigned", restaurant });
   } catch (err) {
     console.error("[assignPlan]", err.message);
@@ -295,11 +297,25 @@ const updateRestaurant = async (req, res) => {
     });
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
-    const fields = ["name", "ownerEmail", "ownerPhone", "address", "isActive", "subscriptionStatus"];
+    const fields = ["name", "ownerEmail", "ownerPhone", "address", "isActive", "subscriptionStatus", "subscriptionExpiry"];
     for (const f of fields) {
-      if (req.body[f] !== undefined) restaurant[f] = req.body[f];
+      if (req.body[f] !== undefined) {
+        restaurant[f] = req.body[f];
+      }
     }
+
+    // Auto-set status to 'active' if a plan is assigned and status is still 'trial'
+    // (don't override 'suspended' or 'expired' set by the Super Admin manually)
+    if (
+      restaurant.subscriptionPlan &&
+      restaurant.subscriptionStatus === "trial" &&
+      req.body.subscriptionStatus === undefined
+    ) {
+      restaurant.subscriptionStatus = "active";
+    }
+
     await restaurant.save();
+    clearTenantCache(restaurant.restaurantId); // Instantly propagate status changes
     res.json(restaurant);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -344,21 +360,15 @@ const getAnalytics = async (req, res) => {
     const totalRevenue = revenueAgg[0]?.total || 0;
 
     // Feature usage stats
-    const featureAgg = await Restaurant.aggregate([
-      {
-        $group: {
-          _id: null,
-          hr:           { $sum: { $cond: ["$features.hr",           1, 0] } },
-          accounting:   { $sum: { $cond: ["$features.accounting",   1, 0] } },
-          inventory:    { $sum: { $cond: ["$features.inventory",    1, 0] } },
-          onlineOrders: { $sum: { $cond: ["$features.onlineOrders", 1, 0] } },
-          qrMenu:       { $sum: { $cond: ["$features.qrMenu",       1, 0] } },
-          kitchenPanel: { $sum: { $cond: ["$features.kitchenPanel", 1, 0] } },
-          waiterPanel:  { $sum: { $cond: ["$features.waiterPanel",  1, 0] } },
-        },
-      },
-    ]);
-    const featureUsage = featureAgg[0] || {};
+    const featureUsage = {
+      hr:           await Restaurant.countDocuments({ "features.hr":           true }),
+      accounting:   await Restaurant.countDocuments({ "features.accounting":   true }),
+      inventory:    await Restaurant.countDocuments({ "features.inventory":    true }),
+      onlineOrders: await Restaurant.countDocuments({ "features.onlineOrders": true }),
+      qrMenu:       await Restaurant.countDocuments({ "features.qrMenu":       true }),
+      kitchenPanel: await Restaurant.countDocuments({ "features.kitchenPanel": true }),
+      waiterPanel:  await Restaurant.countDocuments({ "features.waiterPanel":  true }),
+    };
 
     res.json({ total, active, trial, expired, suspended, totalRevenue, featureUsage });
   } catch (err) {

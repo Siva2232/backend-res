@@ -2,7 +2,7 @@ const BannerModel = require("../models/Banner");
 const { getModel } = require("../utils/getModel");
 
 const getBanners = async (req, res) => {
-  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
   const banners = await Banner.find({}).select('title description imageUrl tag').lean();
   res.json(banners);

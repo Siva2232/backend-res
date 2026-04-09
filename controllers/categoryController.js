@@ -6,7 +6,7 @@ const { getModel } = require("../utils/getModel");
 // @access  Public
 const getCategories = async (req, res) => {
   try {
-    res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     const Category = await getModel("Category", CategoryModel.schema, req.restaurantId);
     const categories = await Category.find({}).select("name").sort({ name: 1 }).lean();
     res.json(categories);

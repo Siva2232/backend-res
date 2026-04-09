@@ -5,8 +5,8 @@ const { getModel } = require("../utils/getModel");
 // @route   GET /api/products
 // @access  Public
 const getProducts = async (req, res) => {
-  // allow browser/client caching for a short period
-  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
+  // Never serve stale product lists — data changes frequently via admin panel
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
 
   try {
     const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
@@ -42,7 +42,7 @@ const getProducts = async (req, res) => {
 // @route   GET /api/products/:id
 // @access  Public
 const getProductById = async (req, res) => {
-  res.set('Cache-Control', 'public, max-age=60');
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
   const product = await Product.findById(req.params.id);
 

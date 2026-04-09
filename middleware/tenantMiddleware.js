@@ -19,6 +19,11 @@ function _setCache(rid, doc) {
   _cache.set(rid, { doc, ts: Date.now() });
 }
 
+// Exported so controllers can bust the cache immediately after status changes
+function _clearCache(rid) {
+  _cache.delete(rid.toUpperCase().trim());
+}
+
 /**
  * tenantMiddleware
  * ----------------
@@ -71,4 +76,4 @@ const tenantMiddleware = async (req, res, next) => {
   }
 };
 
-module.exports = { tenantMiddleware };
+module.exports = { tenantMiddleware, clearTenantCache: _clearCache };

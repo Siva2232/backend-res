@@ -2,7 +2,7 @@ const OfferModel = require("../models/Offer");
 const { getModel } = require("../utils/getModel");
 
 const getOffers = async (req, res) => {
-  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   const Offer = await getModel("Offer", OfferModel.schema, req.restaurantId);
   const offers = await Offer.find({ isPublished: true }).select(
     "title description imageUrl tag"
