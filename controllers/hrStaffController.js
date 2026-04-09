@@ -1,7 +1,7 @@
 const HRStaffModel = require('../models/HRStaff');
 const { getModel } = require('../utils/getModel');
 
-const HRStaff = (req) => getModel('HRStaff', HRStaffModel.schema, req.restaurantId);
+const HRStaff = async (req) => getModel('HRStaff', HRStaffModel.schema, req.restaurantId);
 const User = require('../models/User'); // Import User model
 const jwt = require('jsonwebtoken');
 const { emitUpdate } = require('../utils/socketUtils');
@@ -19,7 +19,7 @@ const loginStaff = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ message: 'Email and password are required' });
 
-    const staff = await HRStaff(req).findOne({ email }).populate('currentShift', 'name type startTime endTime');
+    const staff = (await HRStaff(req)).findOne({ email }).populate('currentShift', 'name type startTime endTime');
     if (!staff || !(await staff.matchPassword(password)))
       return res.status(401).json({ message: 'Invalid email or password' });
 
@@ -61,8 +61,8 @@ const getAllStaff = async (req, res) => {
     if (role) query.role = role;
     if (status) query.status = status;
 
-    const total = await HRStaff(req).countDocuments(query);
-    const staff = await HRStaff(req).find(query)
+    const total = (await HRStaff(req)).countDocuments(query);
+    const staff = (await HRStaff(req)).find(query)
       .select('-password')
       .populate('currentShift', 'name type startTime endTime')
       .sort({ createdAt: -1 })
@@ -79,7 +79,7 @@ const getAllStaff = async (req, res) => {
 // @route GET /api/hr/staff/:id
 const getStaffById = async (req, res) => {
   try {
-    const staff = await HRStaff(req).findById(req.params.id)
+    const staff = (await HRStaff(req)).findById(req.params.id)
       .select('-password')
       .populate('currentShift', 'name type startTime endTime');
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
@@ -113,7 +113,7 @@ const createStaff = async (req, res) => {
     if (!name || !email || !password)
       return res.status(400).json({ message: 'Name, email and password are required' });
 
-    const exists = await HRStaff(req).findOne({ email });
+    const exists = (await HRStaff(req)).findOne({ email });
     if (exists) return res.status(400).json({ message: 'Email already registered' });
 
     // Sync with User model for global panel access (Admin/Manager/Waiter/Kitchen)
@@ -145,7 +145,7 @@ const createStaff = async (req, res) => {
       await userExists.save();
     }
 
-    const staff = await HRStaff(req).create({
+    const staff = (await HRStaff(req)).create({
       name, email, password, phone, role, department, designation,
       joiningDate, status, baseSalary, address, gender, dateOfBirth, emergencyContact,
     });
@@ -164,7 +164,7 @@ const createStaff = async (req, res) => {
 const updateStaff = async (req, res) => {
   try {
     const { password, ...updates } = req.body;
-    const staff = await HRStaff(req).findById(req.params.id);
+    const staff = (await HRStaff(req)).findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     // Update staff record
@@ -218,7 +218,7 @@ const updateStaff = async (req, res) => {
 // @route DELETE /api/hr/staff/:id
 const deleteStaff = async (req, res) => {
   try {
-    const staff = await HRStaff(req).findById(req.params.id);
+    const staff = (await HRStaff(req)).findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     // Also remove the linked User account to keep both systems in sync
@@ -240,7 +240,7 @@ const uploadDocument = async (req, res) => {
     if (!name || !url)
       return res.status(400).json({ message: 'Document name and URL required' });
 
-    const staff = await HRStaff(req).findById(req.params.id);
+    const staff = (await HRStaff(req)).findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     staff.documents.push({ name, url });
@@ -255,7 +255,7 @@ const uploadDocument = async (req, res) => {
 // @route DELETE /api/hr/staff/:id/documents/:docId
 const deleteDocument = async (req, res) => {
   try {
-    const staff = await HRStaff(req).findById(req.params.id);
+    const staff = (await HRStaff(req)).findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     staff.documents = staff.documents.filter(
@@ -272,7 +272,7 @@ const deleteDocument = async (req, res) => {
 // @route GET /api/hr/staff/me
 const getMyProfile = async (req, res) => {
   try {
-    const staff = await HRStaff(req).findById(req.hrStaff._id)
+    const staff = (await HRStaff(req)).findById(req.hrStaff._id)
       .select('-password')
       .populate('currentShift', 'name type startTime endTime');
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
@@ -287,7 +287,7 @@ const getMyProfile = async (req, res) => {
 const changeMyPassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const staff = await HRStaff(req).findById(req.hrStaff._id);
+    const staff = (await HRStaff(req)).findById(req.hrStaff._id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     const match = await staff.matchPassword(currentPassword);

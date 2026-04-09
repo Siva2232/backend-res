@@ -13,7 +13,7 @@ const categorySchema = mongoose.Schema(
   }
 );
 
-categorySchema.index({ restaurantId: 1, name: 1 }, { unique: true });
+categorySchema.index({ name: 1 }, { unique: true });
 
 const Category = mongoose.model("Category", categorySchema);
 

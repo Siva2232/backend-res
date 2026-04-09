@@ -1,20 +1,20 @@
 const AccPaymentBaseModel = require('../models/AccPayment');
 const { getModel } = require('../utils/getModel');
 
-const AccPayment = (req) => getModel('AccPayment', AccPaymentBaseModel.schema, req.restaurantId);
+const AccPayment = async (req) => getModel('AccPayment', AccPaymentBaseModel.schema, req.restaurantId);
 const AccOrderModel2 = require('../models/AccOrder');
-const AccOrder = (req) => getModel('AccOrder', AccOrderModel2.schema, req.restaurantId);
+const AccOrder = async (req) => getModel('AccOrder', AccOrderModel2.schema, req.restaurantId);
 const AccPurchaseModel2 = require('../models/AccPurchase');
-const AccPurchase = (req) => getModel('AccPurchase', AccPurchaseModel2.schema, req.restaurantId);
+const AccPurchase = async (req) => getModel('AccPurchase', AccPurchaseModel2.schema, req.restaurantId);
 const AccExpenseModel2 = require('../models/AccExpense');
-const AccExpense = (req) => getModel('AccExpense', AccExpenseModel2.schema, req.restaurantId);
+const AccExpense = async (req) => getModel('AccExpense', AccExpenseModel2.schema, req.restaurantId);
 const AccPartyModel2 = require('../models/AccParty');
-const AccParty = (req) => getModel('AccParty', AccPartyModel2.schema, req.restaurantId);
+const AccParty = async (req) => getModel('AccParty', AccPartyModel2.schema, req.restaurantId);
 const AccLedgerEntryModel2 = require('../models/AccLedgerEntry');
-const AccLedgerEntry = (req) => getModel('AccLedgerEntry', AccLedgerEntryModel2.schema, req.restaurantId);
+const AccLedgerEntry = async (req) => getModel('AccLedgerEntry', AccLedgerEntryModel2.schema, req.restaurantId);
 const { CODES, getAccount, createLedgerEntries, reverseLedgerEntries } = require('../utils/accLedgerUtils');
 
-const getRefModel = (refModelName, req) => getModel(refModelName, { AccOrder: AccOrderModel2.schema, AccPurchase: AccPurchaseModel2.schema, AccExpense: AccExpenseModel2.schema }[refModelName], req.restaurantId);
+const getRefModel = async (refModelName, req) => getModel(refModelName, { AccOrder: AccOrderModel2.schema, AccPurchase: AccPurchaseModel2.schema, AccExpense: AccExpenseModel2.schema }[refModelName], req.restaurantId);
 
 // Helper: determine direction and AR/AP code based on model
 const getDirection = (refModel) => {
@@ -35,8 +35,8 @@ const getPayments = async (req, res) => {
       if (from) query.date.$gte = new Date(from);
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
-    const total = await AccPayment(req).countDocuments(query);
-    const payments = await AccPayment(req).find(query)
+    const total = (await AccPayment(req)).countDocuments(query);
+    const payments = (await AccPayment(req)).find(query)
       .populate('party', 'name phone')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -52,7 +52,7 @@ const createPayment = async (req, res) => {
   try {
     const { refModel, refId, amount, mode, date, party: partyId, notes } = req.body;
 
-    const Model = getRefModel(refModel, req);
+    const Model = await getRefModel(refModel, req);
     if (!Model) return res.status(400).json({ message: 'Invalid refModel' });
 
     const doc = await Model.findById(refId);
@@ -64,12 +64,12 @@ const createPayment = async (req, res) => {
     }
 
     // Create payment record
-    const payment = await AccPayment(req).create({ refModel, refId, amount, mode: mode || 'Cash', date, party: partyId || doc.party, notes });
+    const payment = await (await AccPayment(req)).create({ refModel, refId, amount, mode: mode || 'Cash', date, party: partyId || doc.party, notes });
 
     // Build ledger entries
     const { direction, code } = getDirection(refModel);
-    const contraAcc = await getAccount(code);
-    const cashAcc = await getAccount(CODES.CASH);
+    const contraAcc = await getAccount(code, req.restaurantId);
+    const cashAcc = await getAccount(CODES.CASH, req.restaurantId);
     const entries = [];
     if (direction === 'receive') {
       entries.push({ account: cashAcc._id, debit: amount, credit: 0, description: `Payment received (${mode || 'Cash'})`, date: date ? new Date(date) : new Date() });
@@ -78,7 +78,7 @@ const createPayment = async (req, res) => {
       entries.push({ account: contraAcc._id, debit: amount, credit: 0, description: 'AP cleared', date: date ? new Date(date) : new Date() });
       entries.push({ account: cashAcc._id, debit: 0, credit: amount, description: `Payment made (${mode || 'Cash'})`, date: date ? new Date(date) : new Date() });
     }
-    const saved = await createLedgerEntries(entries, 'AccPayment', payment._id, payment.party);
+    const saved = await createLedgerEntries(entries, 'AccPayment', payment._id, payment.party, null, req.restaurantId);
     payment.ledgerEntries = saved.map(e => e._id);
     await payment.save();
 
@@ -96,7 +96,7 @@ const createPayment = async (req, res) => {
     const pId = partyId || doc.party;
     if (pId) {
       const delta = direction === 'receive' ? -amount : amount;
-      await AccParty(req).findByIdAndUpdate(pId, { $inc: { balance: delta } });
+      (await AccParty(req)).findByIdAndUpdate(pId, { $inc: { balance: delta } });
     }
 
     res.status(201).json(payment);
@@ -108,11 +108,11 @@ const createPayment = async (req, res) => {
 // @route DELETE /api/acc/payments/:id
 const deletePayment = async (req, res) => {
   try {
-    const payment = await AccPayment(req).findById(req.params.id);
+    const payment = await (await AccPayment(req)).findById(req.params.id);
     if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
-    const Model = getRefModel(payment.refModel, req);
-    await reverseLedgerEntries(payment.ledgerEntries);
+    const Model = await getRefModel(payment.refModel, req);
+    await reverseLedgerEntries(payment.ledgerEntries, req.restaurantId);
 
     if (Model) {
       const doc = await Model.findById(payment.refId);
@@ -128,7 +128,7 @@ const deletePayment = async (req, res) => {
     const pId = payment.party;
     if (pId) {
       const delta = direction === 'receive' ? payment.amount : -payment.amount;
-      await AccParty(req).findByIdAndUpdate(pId, { $inc: { balance: delta } });
+      (await AccParty(req)).findByIdAndUpdate(pId, { $inc: { balance: delta } });
     }
 
     await payment.deleteOne();

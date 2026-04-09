@@ -1,7 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const SuperAdmin = require("../models/SuperAdmin");
-const { tenantStorage } = require("../utils/tenantPlugin");
 
 const protect = async (req, res, next) => {
   let token;
@@ -57,11 +56,10 @@ const protect = async (req, res, next) => {
         req.user.role = decoded.role;
       }
 
-      // Set req.restaurantId for getModel() in controllers
+      // Attach restaurantId to req for downstream controllers
       const rid = req.user.restaurantId;
       if (rid) {
-        req.restaurantId = String(rid).toUpperCase();
-        return tenantStorage.run({ restaurantId: req.restaurantId }, () => next());
+        req.restaurantId = rid.toUpperCase();
       }
       return next();
     } catch (error) {

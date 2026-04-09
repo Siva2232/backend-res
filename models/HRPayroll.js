@@ -71,4 +71,5 @@ hrPayrollSchema.pre('findOneAndUpdate', function () {
   }
 });
 
+
 module.exports = mongoose.model('HRPayroll', hrPayrollSchema);

@@ -20,6 +20,5 @@ const accPartySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accPartySchema.index({ name: 1 });
 
 module.exports = mongoose.model('AccParty', accPartySchema);

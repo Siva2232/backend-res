@@ -21,7 +21,5 @@ const accLedgerEntrySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-accLedgerEntrySchema.index({ txnId: 1 });
-accLedgerEntrySchema.index({ account: 1 });
 
 module.exports = mongoose.model('AccLedgerEntry', accLedgerEntrySchema);

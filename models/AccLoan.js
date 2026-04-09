@@ -34,4 +34,5 @@ accLoanSchema.pre('save', async function () {
   }
 });
 
+
 module.exports = mongoose.model('AccLoan', accLoanSchema);

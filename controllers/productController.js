@@ -1,9 +1,6 @@
 const ProductModel = require("../models/Product");
 const { getModel } = require("../utils/getModel");
 
-// Helper — returns the dynamic Product model for the requesting restaurant
-const Product = (req) => getModel("Product", ProductModel.schema, req.restaurantId);
-
 // @desc    Fetch all products
 // @route   GET /api/products
 // @access  Public
@@ -12,13 +9,14 @@ const getProducts = async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
 
   try {
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
     const { category, isAvailable, limit, fields } = req.query;
     let queryObj = {};
 
     if (category) queryObj.category = category;
     if (isAvailable !== undefined) queryObj.isAvailable = isAvailable === 'true';
 
-    let query = Product(req).find(queryObj).lean();
+    let query = Product.find(queryObj).lean();
 
     // Field selection to reduce payload size
     if (fields) {
@@ -45,7 +43,8 @@ const getProducts = async (req, res) => {
 // @access  Public
 const getProductById = async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60');
-  const product = await Product(req).findById(req.params.id);
+  const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
+  const product = await Product.findById(req.params.id);
 
   if (product) {
     res.json(product);
@@ -59,6 +58,7 @@ const getProductById = async (req, res) => {
 // @access  Private/Admin
 const createProduct = async (req, res) => {
   try {
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
     const { name, price, image, category, description, type, isAvailable, available,
             hasPortions, portions, addonGroups } = req.body;
 
@@ -67,7 +67,7 @@ const createProduct = async (req, res) => {
       throw new Error("Missing required product fields");
     }
 
-    const product = new (Product(req))({
+    const product = new Product({
       name,
       price,
       image,
@@ -83,11 +83,11 @@ const createProduct = async (req, res) => {
 
     const createdProduct = await product.save();
 
-    // Broadcast creation to all clients in this restaurant's room
+    // Broadcast creation to all clients
     const io = req.app.get('io');
     if (io) {
-      io.to(req.restaurantId).emit('productUpdated', createdProduct);
-      io.to(req.restaurantId).emit('productsUpdated');
+      io.emit('productUpdated', createdProduct);
+      io.emit('productsUpdated');
     }
 
     res.status(201).json(createdProduct);
@@ -103,6 +103,7 @@ const createProduct = async (req, res) => {
 // @access  Private/Admin
 const updateProduct = async (req, res) => {
   try {
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
     const { name, price, image, category, description, isAvailable, available, type,
             hasPortions, portions, addonGroups } = req.body;
 
@@ -127,7 +128,7 @@ const updateProduct = async (req, res) => {
     // Remove undefined fields so they don't overwrite with null/undefined
     Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
 
-    const product = await Product(req).findByIdAndUpdate(
+    const product = await Product.findByIdAndUpdate(
       req.params.id,
       { $set: updatedData },
       { returnDocument: "after", runValidators: true }
@@ -137,8 +138,8 @@ const updateProduct = async (req, res) => {
       // Broadcast update to all clients to refresh products instantly
       const io = req.app.get('io');
       if (io) {
-        io.to(req.restaurantId).emit('productUpdated', product);
-        io.to(req.restaurantId).emit('productsUpdated');
+        io.emit('productUpdated', product); // Emit the specific product that was updated
+        io.emit('productsUpdated'); // General event for bulk refresh if needed
       }
 
       res.json(product);
@@ -155,17 +156,18 @@ const updateProduct = async (req, res) => {
 // @route   DELETE /api/products/:id
 // @access  Private/Admin
 const deleteProduct = async (req, res) => {
-  const product = await Product(req).findById(req.params.id);
+  const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
+  const product = await Product.findById(req.params.id);
 
   if (product) {
     const productId = product._id;
-    await Product(req).deleteOne({ _id: productId });
+    await Product.deleteOne({ _id: productId });
     
-    // Broadcast deletion to all clients in the restaurant room
+    // Broadcast deletion to all clients
     const io = req.app.get('io');
     if (io) {
-      io.to(req.restaurantId).emit('productDeleted', productId);
-      io.to(req.restaurantId).emit('productsUpdated');
+      io.emit('productDeleted', productId);
+      io.emit('productsUpdated');
     }
     
     res.json({ message: "Product removed" });

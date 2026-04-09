@@ -1,5 +1,4 @@
 const Restaurant = require("../models/Restaurant");
-const { tenantStorage } = require("../utils/tenantPlugin");
 
 /**
  * tenantMiddleware
@@ -38,8 +37,7 @@ const tenantMiddleware = async (req, res, next) => {
     // Attach to request for use in controllers
     req.restaurant = restaurant;
     req.restaurantId = restaurant.restaurantId;
-    // Wrap remaining handlers in tenant context for auto-scoped queries
-    return tenantStorage.run({ restaurantId: restaurant.restaurantId }, () => next());
+    return next();
   } catch (err) {
     console.error("[tenantMiddleware] error:", err.message);
     res.status(500).json({ message: "Tenant resolution failed" });

@@ -2,6 +2,7 @@ const BillModel = require("../models/Bill");
 const OrderModel = require("../models/Order");
 const { getModel } = require("../utils/getModel");
 
+// Per-request dynamic model helpers (async — returns Promise<Model>)
 const Bill  = (req) => getModel("Bill",  BillModel.schema,  req.restaurantId);
 const Order = (req) => getModel("Order", OrderModel.schema, req.restaurantId);
 
@@ -15,7 +16,8 @@ const addBill = async (req, res) => {
       res.status(400).json({ message: "Missing order reference" });
       return;
     }
-    const bill = new (Bill(req))({ orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails });
+    const BillM = await Bill(req);
+    const bill = new BillM({ orderRef, table, items, totalAmount, status, paymentMethod, notes, billDetails });
     const created = await bill.save();
     const io = req.app.get('io');
     if (io) io.to(req.restaurantId).emit('billCreated', created);
@@ -25,7 +27,7 @@ const addBill = async (req, res) => {
   }
 };
 
-// @desc    Get bills (admin) â€“ supports ?limit, ?today, ?from params
+// @desc    Get bills (admin) – supports ?limit, ?today, ?from params
 // @route   GET /api/bills
 // @access  Private/Admin
 const getBills = async (req, res) => {
@@ -51,7 +53,7 @@ const getBills = async (req, res) => {
       ];
     }
 
-    const bills = await Bill(req).find(query)
+    const bills = await (await Bill(req)).find(query)
       .sort({ billedAt: -1, _id: -1 })
       .limit(limit)
       .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem -items.image")
@@ -71,7 +73,7 @@ const getBills = async (req, res) => {
 // @access  Private/Admin
 const markBillPaid = async (req, res) => {
   try {
-    const bill = await Bill(req).findById(req.params.id);
+    const bill = await (await Bill(req)).findById(req.params.id);
     if (!bill) return res.status(404).json({ message: "Bill not found" });
 
     bill.paymentSessions = bill.paymentSessions || [];
@@ -103,7 +105,7 @@ const markBillPaid = async (req, res) => {
     bill.paymentStatus = "paid";
     await bill.save();
 
-    const order = await Order(req).findById(bill.orderRef);
+    const order = await (await Order(req)).findById(bill.orderRef);
     if (order) {
       order.paymentSessions = bill.paymentSessions;
       order.paymentStatus = bill.paymentStatus;
@@ -130,7 +132,7 @@ const markBillPaid = async (req, res) => {
 // @access  Private/Admin
 const closeBill = async (req, res) => {
   try {
-    const bill = await Bill(req).findById(req.params.id);
+    const bill = await (await Bill(req)).findById(req.params.id);
     if (!bill) return res.status(404).json({ message: "Bill not found" });
 
     if (bill.status === "Closed") return res.json(bill);
@@ -145,7 +147,7 @@ const closeBill = async (req, res) => {
     }
     await bill.save();
 
-    const order = await Order(req).findById(bill.orderRef);
+    const order = await (await Order(req)).findById(bill.orderRef);
     if (order) {
       order.status = "Closed";
       order.paymentStatus = "paid";

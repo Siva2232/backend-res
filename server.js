@@ -108,6 +108,17 @@ app.use(compression());
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
+// Global restaurantId extraction middleware
+// Extracts restaurantId from query params or headers for ALL requests.
+// Auth middleware may override this with the JWT-based restaurantId.
+app.use((req, res, next) => {
+  const rid = req.query.restaurantId || req.headers['x-restaurant-id'];
+  if (rid && !req.restaurantId) {
+    req.restaurantId = String(rid).toUpperCase().trim();
+  }
+  next();
+});
+
 // configure socket.io and make it available via app.get('io')
 const { Server } = require('socket.io');
 const io = new Server(server, {
@@ -119,21 +130,21 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log('socket client connected', socket.id);
 
-  // Client must emit joinRoom with its restaurantId to receive restaurant-scoped events
+  // Client must emit joinRoom with restaurantId to receive restaurant-scoped events
   socket.on('joinRoom', async (restaurantId) => {
     if (!restaurantId) return;
     const rid = String(restaurantId).toUpperCase().trim();
     socket.join(rid);
     console.log(`socket ${socket.id} joined room ${rid}`);
 
-    // send a lightweight snapshot of active orders for this restaurant only
+    // Send a lightweight snapshot of active orders for THIS restaurant only
     try {
       const OrderModel = require('./models/Order');
       const { getModel } = require('./utils/getModel');
-      const Order = getModel('Order', OrderModel.schema, rid);
+      const Order = await getModel('Order', OrderModel.schema, rid);
       const orders = await Order.find(
         { status: { $in: ['Pending', 'New', 'Preparing', 'Ready', 'Served'] } },
         { 'items.image': 0, 'items.product': 0, waiter: 0, paymentId: 0, __v: 0 }
@@ -153,19 +164,6 @@ io.on('connection', (socket) => {
 app.set('io', io);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Global middleware: ensure req.restaurantId is set from query param / header
-// for routes that are not protected by JWT (public customer-facing routes).
-// Protected routes have it set earlier by authMiddleware or tenantMiddleware.
-app.use((req, _res, next) => {
-  if (!req.restaurantId) {
-    const rid =
-      req.query.restaurantId ||
-      req.headers['x-restaurant-id'];
-    if (rid) req.restaurantId = String(rid).toUpperCase().trim();
-  }
-  next();
-});
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -200,4 +198,17 @@ app.use("/api/superadmin", superAdminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
+
+// Graceful shutdown: close all per-restaurant DB connections
+const { closeAllConnections } = require('./utils/dbConnection');
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing connections...');
+  await closeAllConnections();
+  server.close(() => process.exit(0));
+});
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing connections...');
+  await closeAllConnections();
+  server.close(() => process.exit(0));
+});
 

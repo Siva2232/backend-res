@@ -1,49 +1,23 @@
 /**
- * Dynamic Multi-Tenant Model Registry
- * =====================================
- * Creates (or retrieves from cache) a Mongoose model bound to a
- * restaurant-specific MongoDB collection.
+ * Dynamic Multi-Tenant Model Registry  (Separate-Database Architecture)
+ * ======================================================================
+ * Each restaurant gets its OWN MongoDB database:
+ *   aktech_RESTO001, aktech_RESTO002, etc.
  *
- * Example:
- *   getModel('Product', productSchema, 'RESTO001')
- *   → mongoose model using collection  "products_RESTO001"
+ * Inside each database, collections use standard names:
+ *   products, orders, bills, kitchenbills, tables, etc.
  *
- * Architecture:
- *   - Each restaurant gets its own MongoDB collection per entity.
- *   - NO shared collection with a restaurantId filter field.
- *   - Models are cached in mongoose.models so the schema is compiled only once.
+ * Models are bound to the restaurant's connection via getConnection().
+ * No data is shared between restaurants — FULL isolation.
  *
- * Collection naming map  (modelName → base collection prefix):
- *   Product       → products_<RID>
- *   Order         → orders_<RID>
- *   Bill          → bills_<RID>
- *   KitchenBill   → kitchenbills_<RID>
- *   Category      → categories_<RID>
- *   Table         → tables_<RID>
- *   SubItem       → subitems_<RID>
- *   Banner        → banners_<RID>
- *   Offer         → offers_<RID>
- *   Settings      → settings_<RID>
- *   Notification  → notifications_<RID>
- *   Reservation   → reservations_<RID>
- *   HRStaff       → staff_<RID>
- *   HRAttendance  → attendance_<RID>
- *   HRLeave       → leaves_<RID>
- *   HRShift       → shifts_<RID>
- *   HRPayroll     → payroll_<RID>
- *   AccAccount    → acc_accounts_<RID>
- *   AccExpense    → acc_expenses_<RID>
- *   AccLedgerEntry→ acc_ledger_<RID>
- *   AccLoan       → acc_loans_<RID>
- *   AccOrder      → acc_orders_<RID>
- *   AccParty      → acc_parties_<RID>
- *   AccPayment    → acc_payments_<RID>
- *   AccPurchase   → acc_purchases_<RID>
+ * Usage (async — controllers must await):
+ *   const Product = await getModel('Product', productSchema, 'RESTO001');
+ *   const products = await Product.find();
  */
 
-const mongoose = require("mongoose");
+const { getConnection } = require("./dbConnection");
 
-// Map from logical model name → MongoDB collection prefix
+// Map from logical model name → MongoDB collection name
 const COLLECTION_MAP = {
   Product:        "products",
   Order:          "orders",
@@ -73,14 +47,14 @@ const COLLECTION_MAP = {
 };
 
 /**
- * Returns a Mongoose model bound to a restaurant-specific collection.
+ * Returns a Mongoose model bound to the restaurant's own database.
  *
- * @param {string}           modelName   - Base model name (e.g. 'Product')
- * @param {mongoose.Schema}  schema      - The Mongoose schema for this model
+ * @param {string}           modelName    - Base model name (e.g. 'Product')
+ * @param {mongoose.Schema}  schema       - The Mongoose schema for this model
  * @param {string}           restaurantId - Restaurant identifier (e.g. 'RESTO001')
- * @returns {mongoose.Model}
+ * @returns {Promise<mongoose.Model>}     - NOTE: returns a Promise now
  */
-function getModel(modelName, schema, restaurantId) {
+async function getModel(modelName, schema, restaurantId) {
   if (!restaurantId) {
     throw new Error(
       `[getModel] restaurantId is required to access model "${modelName}". ` +
@@ -90,20 +64,18 @@ function getModel(modelName, schema, restaurantId) {
 
   const rid = String(restaurantId).toUpperCase().trim();
 
-  // Unique internal model name — prevents Mongoose from confusing different
-  // restaurants' models when they share the same base schema.
-  const fullModelName = `${modelName}_${rid}`;
+  // Get (or create) the connection to this restaurant's database
+  const conn = await getConnection(rid);
 
-  // Use cached model if already compiled for this restaurant
-  if (mongoose.models[fullModelName]) {
-    return mongoose.models[fullModelName];
+  // Return cached model if already compiled on this connection
+  if (conn.models[modelName]) {
+    return conn.models[modelName];
   }
 
   // Determine the collection name
-  const prefix = COLLECTION_MAP[modelName] || modelName.toLowerCase() + "s";
-  const collectionName = `${prefix}_${rid}`;
+  const collectionName = COLLECTION_MAP[modelName] || modelName.toLowerCase() + "s";
 
-  return mongoose.model(fullModelName, schema, collectionName);
+  return conn.model(modelName, schema, collectionName);
 }
 
 module.exports = { getModel, COLLECTION_MAP };

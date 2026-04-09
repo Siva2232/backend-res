@@ -8,5 +8,5 @@ const settingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Settings = mongoose.model("Settings", settingsSchema);
-module.exports = Settings;
+
+module.exports = mongoose.model("Settings", settingsSchema);

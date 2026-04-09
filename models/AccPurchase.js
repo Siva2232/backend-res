@@ -34,4 +34,5 @@ accPurchaseSchema.pre('save', async function () {
   }
 });
 
+
 module.exports = mongoose.model('AccPurchase', accPurchaseSchema);

@@ -38,7 +38,7 @@ const reservationSchema = mongoose.Schema(
   }
 );
 
-reservationSchema.index({ status: 1 });
 
 const Reservation = mongoose.model('Reservation', reservationSchema);
+
 module.exports = Reservation;

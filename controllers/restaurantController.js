@@ -2,6 +2,7 @@ const Restaurant = require("../models/Restaurant");
 const SubscriptionPlan = require("../models/SubscriptionPlan");
 const User = require("../models/User");
 const cloudinary = require("cloudinary").v2;
+const { seedAccountsForRestaurant } = require("../utils/accSeeder");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: auto-generate next restaurantId (RESTO001, RESTO002 …)
@@ -148,6 +149,13 @@ const createRestaurant = async (req, res) => {
         role: "admin",
         restaurantId,
       });
+    }
+
+    // Seed the new restaurant's database with default Chart of Accounts
+    try {
+      await seedAccountsForRestaurant(restaurantId);
+    } catch (seedErr) {
+      console.error(`[createRestaurant] Failed to seed accounts for ${restaurantId}:`, seedErr.message);
     }
 
     res.status(201).json({

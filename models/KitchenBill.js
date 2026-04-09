@@ -69,5 +69,5 @@ kitchenBillSchema.index({ createdAt: -1 });
 // Compound index for the active kitchen bills query (status + sort)
 kitchenBillSchema.index({ status: 1, createdAt: -1 });
 
-const KitchenBill = mongoose.model("KitchenBill", kitchenBillSchema);
-module.exports = KitchenBill;
+
+module.exports = mongoose.model("KitchenBill", kitchenBillSchema);

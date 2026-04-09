@@ -44,5 +44,5 @@ const productSchema = mongoose.Schema(
 productSchema.index({ category: 1 });
 productSchema.index({ isAvailable: 1 });
 
-const Product = mongoose.model("Product", productSchema);
-module.exports = Product;
+
+module.exports = mongoose.model("Product", productSchema);

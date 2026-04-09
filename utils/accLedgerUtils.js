@@ -1,11 +1,13 @@
 /**
  * Accounting Ledger Utilities
  * Handles double-entry bookkeeping logic and system account lookup.
+ * All functions require restaurantId for per-restaurant DB isolation.
  */
-const AccAccount = require('../models/AccAccount');
+const AccAccountModel = require('../models/AccAccount');
+const AccLedgerEntryModel = require('../models/AccLedgerEntry');
+const { getModel } = require('./getModel');
 
 const uuidv4 = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-const AccLedgerEntry = require('../models/AccLedgerEntry');
 
 // System account codes (seeded on startup)
 const CODES = {
@@ -39,7 +41,8 @@ const EXPENSE_CATEGORY_CODE = {
   'Taxes': CODES.TAXES,
 };
 
-const getAccount = async (code) => {
+const getAccount = async (code, restaurantId) => {
+  const AccAccount = await getModel('AccAccount', AccAccountModel.schema, restaurantId);
   const acc = await AccAccount.findOne({ code });
   if (!acc) throw new Error(`System account not found: code=${code}. Run /api/acc/accounts/seed first.`);
   return acc;
@@ -49,7 +52,9 @@ const getAccount = async (code) => {
  * Create double-entry pairs and update account balances.
  * entries: [{ account: ObjectId, debit, credit, description, party }]
  */
-const createLedgerEntries = async (entries, refModel, refId, party, session) => {
+const createLedgerEntries = async (entries, refModel, refId, party, session, restaurantId) => {
+  const AccLedgerEntry = await getModel('AccLedgerEntry', AccLedgerEntryModel.schema, restaurantId);
+  const AccAccount = await getModel('AccAccount', AccAccountModel.schema, restaurantId);
   const txnId = uuidv4();
   const created = [];
   for (const e of entries) {
@@ -77,10 +82,10 @@ const createLedgerEntries = async (entries, refModel, refId, party, session) => 
  * Build ledger entries for a Sales Order.
  * paymentMode used only when paidAmount > 0.
  */
-const buildSalesEntries = async ({ totalAmount, paidAmount, balance, paymentMode, date }) => {
-  const salesAcc = await getAccount(CODES.SALES);
-  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH);
-  const arAcc = await getAccount(CODES.ACCOUNTS_RECEIVABLE);
+const buildSalesEntries = async ({ totalAmount, paidAmount, balance, paymentMode, date, restaurantId }) => {
+  const salesAcc = await getAccount(CODES.SALES, restaurantId);
+  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH, restaurantId);
+  const arAcc = await getAccount(CODES.ACCOUNTS_RECEIVABLE, restaurantId);
 
   const entries = [];
   // Credit: Sales
@@ -99,10 +104,10 @@ const buildSalesEntries = async ({ totalAmount, paidAmount, balance, paymentMode
 /**
  * Build ledger entries for a Purchase.
  */
-const buildPurchaseEntries = async ({ totalAmount, paidAmount, balance, paymentMode, date }) => {
-  const purchaseAcc = await getAccount(CODES.PURCHASE_COST);
-  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH);
-  const apAcc = await getAccount(CODES.ACCOUNTS_PAYABLE);
+const buildPurchaseEntries = async ({ totalAmount, paidAmount, balance, paymentMode, date, restaurantId }) => {
+  const purchaseAcc = await getAccount(CODES.PURCHASE_COST, restaurantId);
+  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH, restaurantId);
+  const apAcc = await getAccount(CODES.ACCOUNTS_PAYABLE, restaurantId);
 
   const entries = [];
   // Debit: Purchase Cost
@@ -121,11 +126,11 @@ const buildPurchaseEntries = async ({ totalAmount, paidAmount, balance, paymentM
 /**
  * Build ledger entries for an Expense.
  */
-const buildExpenseEntries = async ({ category, totalAmount, paidAmount, balance, paymentMode, date }) => {
+const buildExpenseEntries = async ({ category, totalAmount, paidAmount, balance, paymentMode, date, restaurantId }) => {
   const code = EXPENSE_CATEGORY_CODE[category] || CODES.OTHER_EXPENSES;
-  const expenseAcc = await getAccount(code);
-  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH);
-  const apAcc = await getAccount(CODES.ACCOUNTS_PAYABLE);
+  const expenseAcc = await getAccount(code, restaurantId);
+  const cashAcc = await getAccount(paymentMode === 'Bank' ? CODES.BANK : CODES.CASH, restaurantId);
+  const apAcc = await getAccount(CODES.ACCOUNTS_PAYABLE, restaurantId);
 
   const entries = [];
   entries.push({ account: expenseAcc._id, debit: totalAmount, credit: 0, description: `Expense: ${category}`, date });
@@ -141,37 +146,37 @@ const buildExpenseEntries = async ({ category, totalAmount, paidAmount, balance,
 /**
  * Build ledger entries for Loans / Capital / Advances.
  */
-const buildLoanEntries = async ({ type, amount, paymentMode, date }) => {
-  const cashAcc = await getAccount(CODES.CASH);
+const buildLoanEntries = async ({ type, amount, paymentMode, date, restaurantId }) => {
+  const cashAcc = await getAccount(CODES.CASH, restaurantId);
   const entries = [];
   switch (type) {
     case 'LoanTaken': {
-      const loanAcc = await getAccount(CODES.LOANS_PAYABLE);
+      const loanAcc = await getAccount(CODES.LOANS_PAYABLE, restaurantId);
       entries.push({ account: cashAcc._id, debit: amount, credit: 0, description: 'Loan received', date });
       entries.push({ account: loanAcc._id, debit: 0, credit: amount, description: 'Loan payable', date });
       break;
     }
     case 'LoanRepayment': {
-      const loanAcc = await getAccount(CODES.LOANS_PAYABLE);
+      const loanAcc = await getAccount(CODES.LOANS_PAYABLE, restaurantId);
       entries.push({ account: loanAcc._id, debit: amount, credit: 0, description: 'Loan repayment', date });
       entries.push({ account: cashAcc._id, debit: 0, credit: amount, description: 'Cash paid for loan', date });
       break;
     }
     case 'CapitalInjection': {
-      const capAcc = await getAccount(CODES.CAPITAL);
+      const capAcc = await getAccount(CODES.CAPITAL, restaurantId);
       entries.push({ account: cashAcc._id, debit: amount, credit: 0, description: 'Capital injected', date });
       entries.push({ account: capAcc._id, debit: 0, credit: amount, description: 'Owner capital', date });
       break;
     }
     case 'VendorAdvance':
     case 'EmployeeAdvance': {
-      const advAcc = await getAccount(CODES.ADVANCES_RECEIVABLE);
+      const advAcc = await getAccount(CODES.ADVANCES_RECEIVABLE, restaurantId);
       entries.push({ account: advAcc._id, debit: amount, credit: 0, description: `${type} given`, date });
       entries.push({ account: cashAcc._id, debit: 0, credit: amount, description: 'Cash paid for advance', date });
       break;
     }
     case 'CustomerAdvance': {
-      const custAdvAcc = await getAccount(CODES.CUSTOMER_ADVANCES);
+      const custAdvAcc = await getAccount(CODES.CUSTOMER_ADVANCES, restaurantId);
       entries.push({ account: cashAcc._id, debit: amount, credit: 0, description: 'Customer advance received', date });
       entries.push({ account: custAdvAcc._id, debit: 0, credit: amount, description: 'Customer advance liability', date });
       break;
@@ -186,10 +191,10 @@ const buildLoanEntries = async ({ type, amount, paymentMode, date }) => {
  * Build ledger entries for recording a Payment against an existing doc.
  * direction: 'receive' (order/incoming) | 'pay' (purchase/expense/outgoing)
  */
-const buildPaymentEntries = async ({ amount, mode, direction, arOrApAccountCode, date }) => {
+const buildPaymentEntries = async ({ amount, mode, direction, arOrApAccountCode, date, restaurantId }) => {
   const code = arOrApAccountCode;
-  const contraAcc = await getAccount(code);
-  const cashAcc = await getAccount(CODES.CASH);
+  const contraAcc = await getAccount(code, restaurantId);
+  const cashAcc = await getAccount(CODES.CASH, restaurantId);
   const entries = [];
   if (direction === 'receive') {
     // Customer pays → Cash in, AR out
@@ -206,7 +211,9 @@ const buildPaymentEntries = async ({ amount, mode, direction, arOrApAccountCode,
 /**
  * Reverse ledger entries for a document (used on delete / status correction).
  */
-const reverseLedgerEntries = async (entryIds) => {
+const reverseLedgerEntries = async (entryIds, restaurantId) => {
+  const AccLedgerEntry = await getModel('AccLedgerEntry', AccLedgerEntryModel.schema, restaurantId);
+  const AccAccount = await getModel('AccAccount', AccAccountModel.schema, restaurantId);
   for (const id of entryIds) {
     const entry = await AccLedgerEntry.findById(id);
     if (!entry) continue;

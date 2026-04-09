@@ -1,9 +1,10 @@
 const cron = require('node-cron');
-const HRStaff = require('../models/HRStaff');
-const HRAttendance = require('../models/HRAttendance');
-const HRPayroll = require('../models/HRPayroll');
+const HRStaffModel = require('../models/HRStaff');
+const HRAttendanceModel = require('../models/HRAttendance');
+const HRPayrollModel = require('../models/HRPayroll');
 const { sendPayslipEmail } = require('./emailService');
 const { generatePayslipPDF } = require('./payslipService');
+const { getModel } = require('../utils/getModel');
 
 /**
  * Initialize all cron jobs for the HR module.
@@ -14,43 +15,57 @@ const initHRCronJobs = () => {
   cron.schedule('5 0 1 * *', async () => {
     console.log('[HR Cron] Generating monthly payroll...');
     try {
+      const Restaurant = require('../models/Restaurant');
+      const restaurants = await Restaurant.find({ isActive: true }, 'restaurantId').lean();
+
       const now = new Date();
-      // Generate for PREVIOUS month
-      let month = now.getMonth(); // 0-indexed, so this is previous month
+      let month = now.getMonth();
       let year = now.getFullYear();
-      if (month === 0) { month = 12; year -= 1; } // January edge case
+      if (month === 0) { month = 12; year -= 1; }
 
-      const allStaff = await HRStaff.find({ status: 'active' });
-      const workingDays = 26;
+      for (const r of restaurants) {
+        try {
+          const HRStaff = await getModel('HRStaff', HRStaffModel.schema, r.restaurantId);
+          const HRAttendance = await getModel('HRAttendance', HRAttendanceModel.schema, r.restaurantId);
+          const HRPayroll = await getModel('HRPayroll', HRPayrollModel.schema, r.restaurantId);
 
-      for (const staff of allStaff) {
-        const start = new Date(Date.UTC(year, month - 1, 1));
-        const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-        const attendance = await HRAttendance.find({ staff: staff._id, date: { $gte: start, $lte: end } });
+          const allStaff = await HRStaff.find({ status: 'active' });
+          const workingDays = 26;
 
-        let presentDays = 0, absentDays = 0, leaveDays = 0;
-        attendance.forEach((a) => {
-          if (a.status === 'present') presentDays++;
-          else if (a.status === 'absent') absentDays++;
-          else if (a.status === 'leave') leaveDays++;
-          else if (a.status === 'half-day') presentDays += 0.5;
-        });
+          for (const staff of allStaff) {
+            const start = new Date(Date.UTC(year, month - 1, 1));
+            const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+            const attendance = await HRAttendance.find({ staff: staff._id, date: { $gte: start, $lte: end } });
 
-        const dailyRate = staff.baseSalary / workingDays;
-        const leaveDeduction = (absentDays + leaveDays) * dailyRate;
+            let presentDays = 0, absentDays = 0, leaveDays = 0;
+            attendance.forEach((a) => {
+              if (a.status === 'present') presentDays++;
+              else if (a.status === 'absent') absentDays++;
+              else if (a.status === 'leave') leaveDays++;
+              else if (a.status === 'half-day') presentDays += 0.5;
+            });
 
-        await HRPayroll.findOneAndUpdate(
-          { staff: staff._id, month, year },
-          {
-            staff: staff._id, month, year, baseSalary: staff.baseSalary,
-            workingDays, presentDays, absentDays, leaveDays,
-            leaveDeduction: Math.round(leaveDeduction * 100) / 100,
-            bonus: 0, overtime: 0,
-          },
-          { upsert: true, setDefaultsOnInsert: true }
-        );
+            const dailyRate = staff.baseSalary / workingDays;
+            const leaveDeduction = (absentDays + leaveDays) * dailyRate;
+
+            await HRPayroll.findOneAndUpdate(
+              { staff: staff._id, month, year },
+              {
+                staff: staff._id, month, year, baseSalary: staff.baseSalary,
+                workingDays, presentDays, absentDays, leaveDays,
+                leaveDeduction: Math.round(leaveDeduction * 100) / 100,
+                bonus: 0, overtime: 0,
+              },
+              { upsert: true, setDefaultsOnInsert: true }
+            );
+          }
+          if (allStaff.length > 0) {
+            console.log(`[HR Cron] Payroll generated for ${allStaff.length} staff in ${r.restaurantId} (${month}/${year})`);
+          }
+        } catch (rErr) {
+          console.error(`[HR Cron] Payroll failed for ${r.restaurantId}:`, rErr.message);
+        }
       }
-      console.log(`[HR Cron] Payroll generated for ${allStaff.length} staff (${month}/${year})`);
     } catch (err) {
       console.error('[HR Cron] Payroll generation failed:', err.message);
     }
@@ -60,29 +75,41 @@ const initHRCronJobs = () => {
   cron.schedule('0 9 1 * *', async () => {
     console.log('[HR Cron] Sending payslip emails...');
     try {
+      const Restaurant = require('../models/Restaurant');
+      const restaurants = await Restaurant.find({ isActive: true }, 'restaurantId').lean();
+
       const now = new Date();
       let month = now.getMonth();
       let year = now.getFullYear();
       if (month === 0) { month = 12; year -= 1; }
 
-      const payrolls = await HRPayroll.find({ month, year, payslipSent: false })
-        .populate('staff', 'name email phone designation department joiningDate baseSalary');
-
-      let sent = 0;
-      for (const payroll of payrolls) {
+      let totalSent = 0;
+      for (const r of restaurants) {
         try {
-          if (!payroll.staff?.email) continue;
-          const pdfBuffer = await generatePayslipPDF(payroll);
-          await sendPayslipEmail(payroll.staff.email, payroll.staff.name, payroll, pdfBuffer);
-          payroll.payslipSent = true;
-          payroll.payslipSentAt = new Date();
-          await payroll.save();
-          sent++;
-        } catch (emailErr) {
-          console.error(`[HR Cron] Failed to send to ${payroll.staff?.email}:`, emailErr.message);
+          const HRPayroll = await getModel('HRPayroll', HRPayrollModel.schema, r.restaurantId);
+          const HRStaff = await getModel('HRStaff', HRStaffModel.schema, r.restaurantId);
+
+          const payrolls = await HRPayroll.find({ month, year, payslipSent: false })
+            .populate({ path: 'staff', model: HRStaff, select: 'name email phone designation department joiningDate baseSalary' });
+
+          for (const payroll of payrolls) {
+            try {
+              if (!payroll.staff?.email) continue;
+              const pdfBuffer = await generatePayslipPDF(payroll);
+              await sendPayslipEmail(payroll.staff.email, payroll.staff.name, payroll, pdfBuffer);
+              payroll.payslipSent = true;
+              payroll.payslipSentAt = new Date();
+              await payroll.save();
+              totalSent++;
+            } catch (emailErr) {
+              console.error(`[HR Cron] Failed to send to ${payroll.staff?.email}:`, emailErr.message);
+            }
+          }
+        } catch (rErr) {
+          console.error(`[HR Cron] Email sending failed for ${r.restaurantId}:`, rErr.message);
         }
       }
-      console.log(`[HR Cron] Payslip emails sent: ${sent}`);
+      console.log(`[HR Cron] Payslip emails sent: ${totalSent}`);
     } catch (err) {
       console.error('[HR Cron] Email sending failed:', err.message);
     }

@@ -2,18 +2,16 @@ const SubItemModel = require("../models/SubItem");
 const ProductModel = require("../models/Product");
 const { getModel } = require("../utils/getModel");
 
-const SubItem = (req) => getModel("SubItem", SubItemModel.schema, req.restaurantId);
-const Product = (req) => getModel("Product", ProductModel.schema, req.restaurantId);
-
 // @desc    Get all sub-items (portions + addon groups)
 // @route   GET /api/sub-items
 const getSubItems = async (req, res) => {
   try {
+    const SubItem = await getModel("SubItem", SubItemModel.schema, req.restaurantId);
     const filter = {};
     if (req.query.type) filter.type = req.query.type;
     if (req.query.category) filter.category = req.query.category;
 
-    const items = await SubItem(req).find(filter).sort({ type: 1, name: 1 });
+    const items = await SubItem.find(filter).sort({ type: 1, name: 1 });
     res.json(items);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -24,6 +22,7 @@ const getSubItems = async (req, res) => {
 // @route   POST /api/sub-items
 const createSubItem = async (req, res) => {
   try {
+    const SubItem = await getModel("SubItem", SubItemModel.schema, req.restaurantId);
     const { type, name, price, maxSelections, addons, category, items } = req.body;
 
     // Bulk creation mode
@@ -54,12 +53,12 @@ const createSubItem = async (req, res) => {
             payload.maxSelections = 0;
           }
 
-          return SubItem(req).create(payload);
+          return SubItem.create(payload);
         })
       );
       
       const io = req.app.get('io');
-      if (io) io.to(req.restaurantId).emit('subItemsUpdated');
+      if (io) io.emit('subItemsUpdated');
 
       return res.status(201).json(createdItems);
     }
@@ -67,7 +66,7 @@ const createSubItem = async (req, res) => {
     if (!type || !name?.trim()) {
       return res.status(400).json({ message: "Type and name are required" });
     }
-    const item = await SubItem(req).create({
+    const item = await SubItem.create({
       type,
       name: name.trim(),
       price: Number(price) || 0,
@@ -77,7 +76,7 @@ const createSubItem = async (req, res) => {
     });
     
     const io = req.app.get('io');
-    if (io) io.to(req.restaurantId).emit('subItemsUpdated');
+    if (io) io.emit('subItemsUpdated');
     
     res.status(201).json(item);
   } catch (err) {
@@ -89,10 +88,12 @@ const createSubItem = async (req, res) => {
 // @route   PUT /api/sub-items/:id
 const updateSubItem = async (req, res) => {
   try {
+    const SubItem = await getModel("SubItem", SubItemModel.schema, req.restaurantId);
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
     const { name, price, maxSelections, addons, isAvailable, type, category } = req.body;
     
     // Previous original sub-item
-    const originalItem = await SubItem(req).findById(req.params.id);
+    const originalItem = await SubItem.findById(req.params.id);
     if (!originalItem) return res.status(404).json({ message: "Sub-item not found" });
 
     // Prepare update object
@@ -125,8 +126,8 @@ const updateSubItem = async (req, res) => {
         if (price !== undefined) updateFields["portions.$.price"] = Number(price);
 
         if (Object.keys(updateFields).length > 0) {
-          await Product(req).updateMany(
-            { "portions.$.isAvailable": true },
+          await Product.updateMany(
+            { "portions.name": oldName },
             { $set: updateFields }
           );
         }
@@ -141,19 +142,19 @@ const updateSubItem = async (req, res) => {
         if (addons !== undefined) updateFields["addonGroups.$.addons"] = addons;
 
         if (Object.keys(updateFields).length > 0) {
-          await Product(req).updateMany(
+          await Product.updateMany(
             { "addonGroups.name": oldName },
             { $set: updateFields }
           );
         }
       }
 
-      // Broadcast update to all clients in restaurant room
+      // Broadcast update to all clients to refresh products instantly
       const io = req.app.get('io');
       if (io) {
-        io.to(req.restaurantId).emit('subItemUpdated', updated);
-        io.to(req.restaurantId).emit('productsUpdated');
-        io.to(req.restaurantId).emit('subItemsUpdated');
+        io.emit('subItemUpdated', updated);
+        io.emit('productsUpdated');
+        io.emit('subItemsUpdated');
       }
     }
 
@@ -167,7 +168,9 @@ const updateSubItem = async (req, res) => {
 // @route   DELETE /api/sub-items/:id
 const deleteSubItem = async (req, res) => {
   try {
-    const item = await SubItem(req).findById(req.params.id);
+    const SubItem = await getModel("SubItem", SubItemModel.schema, req.restaurantId);
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
+    const item = await SubItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: "Sub-item not found" });
 
     // Sync: Remove/Update from all products before deleting from library
@@ -175,12 +178,12 @@ const deleteSubItem = async (req, res) => {
     const type = item.type;
     
     if (type === "portion") {
-      await Product(req).updateMany(
+      await Product.updateMany(
         { "portions.name": oldName },
         { $pull: { portions: { name: oldName } } }
       );
     } else {
-      await Product(req).updateMany(
+      await Product.updateMany(
         { "addonGroups.name": oldName },
         { $pull: { addonGroups: { name: oldName } } }
       );
@@ -188,12 +191,12 @@ const deleteSubItem = async (req, res) => {
 
     await item.deleteOne();
 
-    // Broadcast update to all clients in restaurant room
+    // Broadcast update to all clients to refresh products instantly
     const io = req.app.get('io');
     if (io) {
-      io.to(req.restaurantId).emit('subItemDeleted', { id: req.params.id, type, name: oldName });
-      io.to(req.restaurantId).emit('productsUpdated');
-      io.to(req.restaurantId).emit('subItemsUpdated');
+      io.emit('subItemDeleted', { id: req.params.id, type, name: oldName });
+      io.emit('productsUpdated');
+      io.emit('subItemsUpdated');
     }
 
     res.json({ message: "Sub-item removed" });
@@ -204,11 +207,13 @@ const deleteSubItem = async (req, res) => {
 
 const updateSubItemStatus = async (req, res) => {
   try {
+    const SubItem = await getModel("SubItem", SubItemModel.schema, req.restaurantId);
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
     const { isAvailable } = req.body;
-    const item = await SubItem(req).findById(req.params.id);
+    const item = await SubItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: "Sub-item not found" });
 
-    const updated = await SubItem(req).findByIdAndUpdate(
+    const updated = await SubItem.findByIdAndUpdate(
       req.params.id,
       { $set: { isAvailable } },
       { returnDocument: "after" }
@@ -216,12 +221,12 @@ const updateSubItemStatus = async (req, res) => {
 
     const oldName = item.name;
     if (item.type === "portion") {
-      await Product(req).updateMany(
+      await Product.updateMany(
         { "portions.name": oldName },
         { $set: { "portions.$.isAvailable": isAvailable } }
       );
     } else {
-      await Product(req).updateMany(
+      await Product.updateMany(
         { "addonGroups.name": oldName },
         { $set: { "addonGroups.$.isAvailable": isAvailable } }
       );
@@ -229,9 +234,9 @@ const updateSubItemStatus = async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to(req.restaurantId).emit('subItemUpdated', updated);
-      io.to(req.restaurantId).emit('productsUpdated');
-      io.to(req.restaurantId).emit('subItemsUpdated');
+      io.emit('subItemUpdated', updated);
+      io.emit('productsUpdated');
+      io.emit('subItemsUpdated');
     }
 
     res.json(updated);

@@ -20,9 +20,8 @@ const tableSchema = mongoose.Schema(
   }
 );
 
-tableSchema.index({ restaurantId: 1, tableId: 1 }, { unique: true });
+tableSchema.index({ tableId: 1 }, { unique: true });
 
 const Table = mongoose.model("Table", tableSchema);
-module.exports = Table;
 
 module.exports = Table;

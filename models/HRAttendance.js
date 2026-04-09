@@ -30,4 +30,5 @@ const hrAttendanceSchema = new mongoose.Schema(
 // Prevent duplicate attendance entry per staff per day
 hrAttendanceSchema.index({ staff: 1, date: 1 }, { unique: true });
 
+
 module.exports = mongoose.model('HRAttendance', hrAttendanceSchema);

@@ -30,4 +30,5 @@ accExpenseSchema.pre('save', async function () {
   }
 });
 
+
 module.exports = mongoose.model('AccExpense', accExpenseSchema);

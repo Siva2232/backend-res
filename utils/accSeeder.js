@@ -1,8 +1,9 @@
 /**
  * Seeds the default Chart of Accounts (system accounts).
- * Called once on server startup if accounts don't exist.
+ * Must be called per-restaurant with a restaurantId.
  */
-const AccAccount = require('../models/AccAccount');
+const AccAccountModel = require('../models/AccAccount');
+const { getModel } = require('./getModel');
 
 const DEFAULT_ACCOUNTS = [
   // ── Assets ─────────────────────────────────────────────────────────────────
@@ -31,12 +32,16 @@ const DEFAULT_ACCOUNTS = [
   { code: '5006', name: 'Tax Expense',           type: 'Expense',   subType: 'Taxes',                isSystem: true },
 ];
 
-const seedAccounts = async () => {
+/**
+ * Seed accounts for a specific restaurant's database.
+ * @param {string} restaurantId - e.g. "RESTO001"
+ */
+const seedAccountsForRestaurant = async (restaurantId) => {
   try {
+    const AccAccount = await getModel('AccAccount', AccAccountModel.schema, restaurantId);
     const existing = await AccAccount.countDocuments({ isSystem: true });
     if (existing >= DEFAULT_ACCOUNTS.length) {
-      console.log('[Accounting] Chart of Accounts already seeded.');
-      return;
+      return; // Already seeded
     }
     for (const acc of DEFAULT_ACCOUNTS) {
       await AccAccount.findOneAndUpdate(
@@ -45,10 +50,28 @@ const seedAccounts = async () => {
         { upsert: true, setDefaultsOnInsert: true }
       );
     }
-    console.log('[Accounting] Default Chart of Accounts seeded successfully.');
+    console.log(`[Accounting] Chart of Accounts seeded for ${restaurantId}`);
   } catch (err) {
-    console.error('[Accounting] Seeding failed:', err.message);
+    console.error(`[Accounting] Seeding failed for ${restaurantId}:`, err.message);
   }
 };
 
-module.exports = { seedAccounts, DEFAULT_ACCOUNTS };
+/**
+ * Seed accounts for ALL restaurants.
+ */
+const seedAccounts = async () => {
+  try {
+    const Restaurant = require('../models/Restaurant');
+    const restaurants = await Restaurant.find({}, 'restaurantId').lean();
+    for (const r of restaurants) {
+      await seedAccountsForRestaurant(r.restaurantId);
+    }
+    if (restaurants.length > 0) {
+      console.log(`[Accounting] Seeded accounts for ${restaurants.length} restaurant(s)`);
+    }
+  } catch (err) {
+    console.error('[Accounting] Global seeding failed:', err.message);
+  }
+};
+
+module.exports = { seedAccounts, seedAccountsForRestaurant, DEFAULT_ACCOUNTS };
