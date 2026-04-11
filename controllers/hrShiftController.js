@@ -9,7 +9,7 @@ const HRStaff = async (req) => getModel('HRStaff', HRStaffModel2.schema, req.res
 // @route GET /api/hr/shifts
 const getShifts = async (req, res) => {
   try {
-    const shifts = (await HRShift(req)).find()
+    const shifts = await (await HRShift(req)).find()
       .populate('assignedStaff', 'name email designation department')
       .sort({ createdAt: -1 });
     res.json(shifts);
@@ -22,7 +22,7 @@ const getShifts = async (req, res) => {
 // @route GET /api/hr/shifts/:id
 const getShiftById = async (req, res) => {
   try {
-    const shift = (await HRShift(req)).findById(req.params.id)
+    const shift = await (await HRShift(req)).findById(req.params.id)
       .populate('assignedStaff', 'name email designation department');
     if (!shift) return res.status(404).json({ message: 'Shift not found' });
     res.json(shift);
@@ -42,7 +42,7 @@ const createShift = async (req, res) => {
     if (!name || !startTime || !endTime)
       return res.status(400).json({ message: 'Name, startTime and endTime are required' });
 
-    const shift = (await HRShift(req)).create({ 
+    const shift = await (await HRShift(req)).create({ 
       name, 
       type: finalType, 
       startTime, 
@@ -56,7 +56,7 @@ const createShift = async (req, res) => {
       await (await HRStaff(req)).updateMany({ _id: { $in: finalStaff } }, { currentShift: shift._id });
     }
 
-    const populated = (await HRShift(req)).findById(shift._id)
+    const populated = await (await HRShift(req)).findById(shift._id)
       .populate('assignedStaff', 'name email designation department');
     res.status(201).json(populated);
   } catch (err) {
@@ -68,7 +68,7 @@ const createShift = async (req, res) => {
 // @route PUT /api/hr/shifts/:id
 const updateShift = async (req, res) => {
   try {
-    const old = (await HRShift(req)).findById(req.params.id);
+    const old = await (await HRShift(req)).findById(req.params.id);
     if (!old) return res.status(404).json({ message: 'Shift not found' });
 
     const { assignedStaff, staff, type, shiftType, ...rest } = req.body;
@@ -104,7 +104,7 @@ const updateShift = async (req, res) => {
     if (finalStaff !== undefined) updateData.assignedStaff = finalStaff;
     if (finalType !== undefined) updateData.type = finalType;
 
-    const shift = (await HRShift(req)).findByIdAndUpdate(
+    const shift = await (await HRShift(req)).findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
@@ -120,7 +120,7 @@ const updateShift = async (req, res) => {
 // @route DELETE /api/hr/shifts/:id
 const deleteShift = async (req, res) => {
   try {
-    const shift = (await HRShift(req)).findById(req.params.id);
+    const shift = await (await HRShift(req)).findById(req.params.id);
     if (!shift) return res.status(404).json({ message: 'Shift not found' });
 
     // Clear currentShift on assigned staff
@@ -142,7 +142,7 @@ const assignStaffToShift = async (req, res) => {
     if (!Array.isArray(staffIds) || staffIds.length === 0)
       return res.status(400).json({ message: 'staffIds array required' });
 
-    const shift = (await HRShift(req)).findByIdAndUpdate(
+    const shift = await (await HRShift(req)).findByIdAndUpdate(
       req.params.id,
       { $addToSet: { assignedStaff: { $each: staffIds } } },
       { new: true }

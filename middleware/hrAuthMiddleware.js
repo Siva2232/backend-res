@@ -1,9 +1,11 @@
 const jwt = require('jsonwebtoken');
-const HRStaff = require('../models/HRStaff');
+const HRStaffModel = require('../models/HRStaff');
+const { getModel } = require('../utils/getModel');
 
 /**
  * Middleware: Protect HR routes — verifies JWT issued by HR login.
  * Attaches req.hrStaff with the authenticated staff document.
+ * Uses the per-restaurant (tenant) DB to look up the staff.
  */
 const protectHR = async (req, res, next) => {
   let token;
@@ -18,13 +20,19 @@ const protectHR = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const staff = await HRStaff.findById(decoded.id).select('-password');
+    // restaurantId comes from the JWT payload (included at login) or from
+    // the global middleware which reads it from query param / header.
+    const restaurantId = (decoded.restaurantId || req.restaurantId || '').toUpperCase().trim();
+    if (!restaurantId) {
+      return res.status(400).json({ message: 'Restaurant ID required. Please include restaurantId.' });
+    }
+    // Look up staff in the per-restaurant tenant database
+    const HRStaffTenant = await getModel('HRStaff', HRStaffModel.schema, restaurantId);
+    const staff = await HRStaffTenant.findById(decoded.id).select('-password');
     if (!staff) return res.status(401).json({ message: 'Staff not found, please login again' });
     if (staff.status !== 'active') return res.status(403).json({ message: 'Account inactive' });
     req.hrStaff = staff;
-    // Attach restaurantId for downstream controllers
-    const rid = staff.restaurantId;
-    if (rid) req.restaurantId = rid.toUpperCase();
+    req.restaurantId = restaurantId;
     return next();
   } catch (err) {
     if (err.name === 'TokenExpiredError')
@@ -85,17 +93,20 @@ const protectAny = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const restaurantId = (decoded.restaurantId || req.restaurantId || '').toUpperCase().trim();
 
-    // Try HR staff first
-    const hrStaff = await HRStaff.findById(decoded.id).select('-password');
-    if (hrStaff && hrStaff.status === 'active') {
-      req.hrStaff = hrStaff;
-      const rid = hrStaff.restaurantId;
-      if (rid) req.restaurantId = rid.toUpperCase();
-      return next();
+    // Try HR staff first (tenant-aware lookup)
+    if (restaurantId) {
+      const HRStaffTenant = await getModel('HRStaff', HRStaffModel.schema, restaurantId);
+      const hrStaff = await HRStaffTenant.findById(decoded.id).select('-password');
+      if (hrStaff && hrStaff.status === 'active') {
+        req.hrStaff = hrStaff;
+        req.restaurantId = restaurantId;
+        return next();
+      }
     }
 
-    // Fall back to POS user
+    // Fall back to POS user (global model — Users are in the main DB)
     const User = require('../models/User');
     const user = await User.findById(decoded.id).select('-password');
     if (user) {

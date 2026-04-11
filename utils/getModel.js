@@ -46,6 +46,66 @@ const COLLECTION_MAP = {
   AccPurchase:    "acc_purchases",
 };
 
+// Lazily-loaded map of all model schemas.
+// Loaded once on first use to avoid circular-dependency issues at module init.
+let _allSchemas = null;
+function _getSchemas() {
+  if (_allSchemas) return _allSchemas;
+  _allSchemas = {
+    Product:        require('../models/Product').schema,
+    Order:          require('../models/Order').schema,
+    Bill:           require('../models/Bill').schema,
+    KitchenBill:    require('../models/KitchenBill').schema,
+    Category:       require('../models/Category').schema,
+    Table:          require('../models/Table').schema,
+    SubItem:        require('../models/SubItem').schema,
+    Banner:         require('../models/Banner').schema,
+    Offer:          require('../models/Offer').schema,
+    Settings:       require('../models/Settings').schema,
+    Notification:   require('../models/Notification').schema,
+    Reservation:    require('../models/Reservation').schema,
+    HRStaff:        require('../models/HRStaff').schema,
+    HRAttendance:   require('../models/HRAttendance').schema,
+    HRLeave:        require('../models/HRLeave').schema,
+    HRShift:        require('../models/HRShift').schema,
+    HRPayroll:      require('../models/HRPayroll').schema,
+    AccAccount:     require('../models/AccAccount').schema,
+    AccExpense:     require('../models/AccExpense').schema,
+    AccLedgerEntry: require('../models/AccLedgerEntry').schema,
+    AccLoan:        require('../models/AccLoan').schema,
+    AccOrder:       require('../models/AccOrder').schema,
+    AccParty:       require('../models/AccParty').schema,
+    AccPayment:     require('../models/AccPayment').schema,
+    AccPurchase:    require('../models/AccPurchase').schema,
+  };
+  return _allSchemas;
+}
+
+/**
+ * Bootstrap all known schemas onto a tenant connection the first time it is used.
+ *
+ * This is REQUIRED for Mongoose populate() to work across model references on a
+ * per-restaurant (non-default) connection.  Example: HRStaff.currentShift has
+ * ref: 'HRShift'.  When populate('currentShift') is called on the tenant
+ * connection, Mongoose looks for model 'HRShift' on THAT connection — not on the
+ * global default connection.  Without this bootstrap, only the one model
+ * explicitly requested by the controller exists on the connection, causing
+ * populate() to throw MissingSchemaError → HTTP 500.
+ *
+ * The bootstrap runs exactly once per active connection (guarded by _bootstrapped).
+ */
+function _bootstrapConn(conn) {
+  if (conn._bootstrapped) return;
+  conn._bootstrapped = true;
+  const schemas = _getSchemas();
+  for (const [name, schema] of Object.entries(schemas)) {
+    if (!conn.models[name]) {
+      const col = COLLECTION_MAP[name] || name.toLowerCase() + "s";
+      conn.model(name, schema, col);
+    }
+  }
+}
+
 /**
  * Returns a Mongoose model bound to the restaurant's own database.
  *
@@ -67,14 +127,16 @@ async function getModel(modelName, schema, restaurantId) {
   // Get (or create) the connection to this restaurant's database
   const conn = await getConnection(rid);
 
-  // Return cached model if already compiled on this connection
+  // Register ALL schemas on this connection once — needed for populate() refs
+  _bootstrapConn(conn);
+
+  // Return the model (guaranteed to be registered after bootstrap)
   if (conn.models[modelName]) {
     return conn.models[modelName];
   }
 
-  // Determine the collection name
+  // Fallback: register on-demand for any model not in COLLECTION_MAP
   const collectionName = COLLECTION_MAP[modelName] || modelName.toLowerCase() + "s";
-
   return conn.model(modelName, schema, collectionName);
 }
 

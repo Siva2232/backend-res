@@ -19,8 +19,8 @@ const getOrders = async (req, res) => {
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
     if (search) query.orderNo = { $regex: search, $options: 'i' };
-    const total = (await AccOrder(req)).countDocuments(query);
-    const orders = (await AccOrder(req)).find(query)
+    const total = await (await AccOrder(req)).countDocuments(query);
+    const orders = await (await AccOrder(req)).find(query)
       .populate('party', 'name phone type')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
@@ -34,7 +34,7 @@ const getOrders = async (req, res) => {
 // @route GET /api/acc/orders/:id
 const getOrder = async (req, res) => {
   try {
-    const order = (await AccOrder(req)).findById(req.params.id)
+    const order = await (await AccOrder(req)).findById(req.params.id)
       .populate('party', 'name phone email address')
       .populate('ledgerEntries');
     if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -51,7 +51,7 @@ const createOrder = async (req, res) => {
     const balance = totalAmount - paidAmount;
     const status = paidAmount <= 0 ? 'Unpaid' : balance <= 0 ? 'Paid' : 'Partial';
 
-    const order = (await AccOrder(req)).create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, date, party: partyId });
+    const order = await (await AccOrder(req)).create({ ...rest, totalAmount, paidAmount, balance, status, paymentMode, date, party: partyId });
 
     // Build and persist ledger entries
     const entries = await buildSalesEntries({ totalAmount, paidAmount, balance, paymentMode, date: date ? new Date(date) : new Date() , restaurantId: req.restaurantId, restaurantId: req.restaurantId});
@@ -73,7 +73,7 @@ const createOrder = async (req, res) => {
 // @route PUT /api/acc/orders/:id
 const updateOrder = async (req, res) => {
   try {
-    const order = (await AccOrder(req)).findById(req.params.id);
+    const order = await (await AccOrder(req)).findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     const oldBalance = order.balance;
@@ -107,7 +107,7 @@ const updateOrder = async (req, res) => {
 // @route DELETE /api/acc/orders/:id
 const deleteOrder = async (req, res) => {
   try {
-    const order = (await AccOrder(req)).findById(req.params.id);
+    const order = await (await AccOrder(req)).findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
     await reverseLedgerEntries(order.ledgerEntries, req.restaurantId);
     if (order.party && order.balance > 0) {

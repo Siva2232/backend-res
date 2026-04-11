@@ -35,8 +35,8 @@ const getPayments = async (req, res) => {
       if (from) query.date.$gte = new Date(from);
       if (to) query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
     }
-    const total = (await AccPayment(req)).countDocuments(query);
-    const payments = (await AccPayment(req)).find(query)
+    const total = await (await AccPayment(req)).countDocuments(query);
+    const payments = await (await AccPayment(req)).find(query)
       .populate('party', 'name phone')
       .sort({ date: -1 })
       .skip((Number(page) - 1) * Number(limit))
