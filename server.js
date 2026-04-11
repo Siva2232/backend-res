@@ -146,18 +146,42 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
+const _socketJwt = require('jsonwebtoken');
+const User = require('./models/User');
+
 io.on('connection', async (socket) => {
   console.log('socket client connected', socket.id);
 
-  // Client must emit joinRoom with restaurantId to receive restaurant-scoped events
-  socket.on('joinRoom', async (restaurantId) => {
+  // Client emits joinRoom with { restaurantId, token }
+  // token is required for staff panels (admin/kitchen/waiter); customers omit it.
+  socket.on('joinRoom', async ({ restaurantId, token } = {}) => {
     if (!restaurantId) return;
     const rid = String(restaurantId).toUpperCase().trim();
+
+    // All clients join the room (needed for customer-facing events like product updates)
     socket.join(rid);
     console.log(`socket ${socket.id} joined room ${rid}`);
 
-    // Send a lightweight snapshot of active orders for THIS restaurant only
+    // Only send the orders snapshot to authenticated staff of THIS restaurant
+    if (!token) return; // anonymous customer — no order snapshot
+
     try {
+      const decoded = _socketJwt.verify(token, process.env.JWT_SECRET);
+      // Confirm this user belongs to the requested restaurant
+      const decodedRid = (decoded.restaurantId || '').toUpperCase().trim();
+      if (decodedRid !== rid) {
+        console.warn(`Socket ${socket.id}: token restaurantId "${decodedRid}" does not match requested room "${rid}" — snapshot denied`);
+        return;
+      }
+      // Confirm the user actually exists and has a staff role
+      const staffUser = await User.findById(decoded.id).select('isAdmin isKitchen isWaiter role restaurantId').lean();
+      if (!staffUser) return;
+      if (staffUser.restaurantId && staffUser.restaurantId.toUpperCase() !== rid) return;
+      const isStaff = staffUser.isAdmin || staffUser.isKitchen || staffUser.isWaiter ||
+        ['admin', 'kitchen', 'waiter'].includes(staffUser.role);
+      if (!isStaff) return;
+
+      // Token is valid and user is staff — send orders snapshot
       const OrderModel = require('./models/Order');
       const { getModel } = require('./utils/getModel');
       const Order = await getModel('Order', OrderModel.schema, rid);
@@ -167,7 +191,8 @@ io.on('connection', async (socket) => {
       ).sort({ createdAt: -1 }).limit(100).lean();
       socket.emit('ordersSnapshot', orders);
     } catch (err) {
-      console.error('failed to load orders for socket snapshot', err);
+      // Invalid/expired token — socket stays in the room but gets no snapshot
+      console.warn(`Socket ${socket.id}: joinRoom token verification failed — no snapshot sent`);
     }
   });
 

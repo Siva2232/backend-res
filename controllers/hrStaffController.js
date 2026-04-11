@@ -125,7 +125,7 @@ const createStaff = async (req, res) => {
     const isWaiter = normalizedDept.includes('waiter');
 
     // Create or update main User account for any role that needs panel access
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email, restaurantId: req.restaurantId });
     if (!userExists) {
       await User.create({
         name,
@@ -134,7 +134,8 @@ const createStaff = async (req, res) => {
         isAdmin,
         isKitchen,
         isWaiter,
-        salary: baseSalary || 0
+        salary: baseSalary || 0,
+        restaurantId: req.restaurantId,
       });
     } else {
       // If user exists, update their flags to match the new HR role
@@ -180,7 +181,7 @@ const updateStaff = async (req, res) => {
     const isKitchen = normalizedDept.includes('kitchen');
     const isWaiter = normalizedDept.includes('waiter');
 
-    const user = await User.findOne({ email: staff.email });
+    const user = await User.findOne({ email: staff.email, restaurantId: req.restaurantId });
     if (user) {
       user.name = staff.name;
       user.email = staff.email;
@@ -201,7 +202,8 @@ const updateStaff = async (req, res) => {
         isAdmin,
         isKitchen,
         isWaiter,
-        salary: staff.baseSalary || 0
+        salary: staff.baseSalary || 0,
+        restaurantId: req.restaurantId,
       });
     }
 
@@ -222,7 +224,7 @@ const deleteStaff = async (req, res) => {
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
 
     // Also remove the linked User account to keep both systems in sync
-    await User.findOneAndDelete({ email: staff.email });
+    await User.findOneAndDelete({ email: staff.email, restaurantId: req.restaurantId });
 
     await staff.deleteOne();
     emitUpdate(req, 'staffDelete', req.params.id);

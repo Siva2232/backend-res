@@ -52,16 +52,53 @@ const getRestaurantById = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // @desc    Get branding for a restaurant (public — used for theme injection)
 // @route   GET /api/restaurants/:restaurantId/branding
-// @access  Public
+// @access  Public (visual fields only); features included only for authenticated admins
 // ─────────────────────────────────────────────────────────────────────────────
 const getRestaurantBranding = async (req, res) => {
   try {
     const restaurant = await Restaurant.findOne(
       { restaurantId: req.params.restaurantId.toUpperCase() },
-      "restaurantId name ownerName logo primaryColor secondaryColor accentColor theme fontFamily features subscriptionStatus subscriptionExpiry subscriptionPlan"
-    ).populate("subscriptionPlan", "name price duration");
+      "restaurantId name logo primaryColor secondaryColor accentColor theme fontFamily features"
+    );
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
-    res.json(restaurant);
+
+    // Base visual-only response — safe for unauthenticated customers
+    const response = {
+      restaurantId:  restaurant.restaurantId,
+      name:          restaurant.name,
+      logo:          restaurant.logo,
+      primaryColor:  restaurant.primaryColor,
+      secondaryColor: restaurant.secondaryColor,
+      accentColor:   restaurant.accentColor,
+      theme:         restaurant.theme,
+      fontFamily:    restaurant.fontFamily,
+    };
+
+    // Only include feature flags when the request carries a valid auth token
+    // (admin/kitchen/waiter panels need these for navigation gating)
+    // For customers, we ONLY expose public flags like qrMenu/onlineOrders
+    const jwt = require("jsonwebtoken");
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
+        response.features = restaurant.features;
+      } catch (_) {
+        // invalid/expired token — treat as public request
+        response.features = {
+          qrMenu: restaurant.features?.qrMenu ?? false,
+          onlineOrders: restaurant.features?.onlineOrders ?? false
+        };
+      }
+    } else {
+      // Public guest - only expose essential flags
+      response.features = {
+        qrMenu: restaurant.features?.qrMenu ?? false,
+        onlineOrders: restaurant.features?.onlineOrders ?? false
+      };
+    }
+
+    res.json(response);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

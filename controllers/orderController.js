@@ -295,7 +295,11 @@ const addOrderItems = async (req, res) => {
     try {
       const token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const authUser = await User.findById(decoded.id).select("_id isWaiter").lean();
+      // Scope to the current restaurant to prevent cross-tenant waiter assignment
+      const authUser = await User.findOne({
+        _id: decoded.id,
+        restaurantId: req.restaurantId,
+      }).select("_id isWaiter").lean();
       if (authUser && authUser.isWaiter) {
         orderData.waiter = authUser._id;
       }

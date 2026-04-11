@@ -88,7 +88,8 @@ const registerUser = async (req, res) => {
 // @access  Private/Admin
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find({}).select("-password").sort({ createdAt: -1 });
+    const filter = req.restaurantId ? { restaurantId: req.restaurantId } : {};
+    const users = await User.find(filter).select("-password").sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
     console.error("getUsers error", error);
@@ -104,7 +105,8 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
     const { name, email, password, isKitchen, isWaiter, salary, advance } = req.body;
 
-    const user = await User.findById(id);
+    const filter = { _id: id, ...(req.restaurantId ? { restaurantId: req.restaurantId } : {}) };
+    const user = await User.findOne(filter);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (name) user.name = name;
@@ -168,7 +170,8 @@ const updateUser = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(id);
+    const filter = { _id: id, ...(req.restaurantId ? { restaurantId: req.restaurantId } : {}) };
+    const user = await User.findOne(filter);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // prevent deleting self
