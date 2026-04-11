@@ -45,6 +45,7 @@ const tenantMiddleware = async (req, res, next) => {
       req.headers["x-restaurant-id"];
 
     if (!restaurantId) {
+      console.warn(`[tenantMiddleware] Missing restaurantId — ${req.method} ${req.originalUrl}`);
       return res.status(400).json({ message: "restaurantId is required" });
     }
 
@@ -69,6 +70,18 @@ const tenantMiddleware = async (req, res, next) => {
     // Attach to request for use in controllers
     req.restaurant = restaurant;
     req.restaurantId = restaurant.restaurantId;
+
+    // ── Cross-tenant access prevention ──
+    // If the user is authenticated (JWT decoded by authMiddleware), verify their
+    // restaurantId matches the one being requested. SuperAdmins are exempt.
+    if (req.user && req.user.restaurantId && req.user.role !== 'superadmin') {
+      const userRid = String(req.user.restaurantId).toUpperCase().trim();
+      if (userRid !== rid) {
+        console.warn(`[tenantMiddleware] BLOCKED cross-tenant access: user belongs to ${userRid}, tried to access ${rid} — ${req.method} ${req.originalUrl}`);
+        return res.status(403).json({ message: "Access denied: cross-tenant request" });
+      }
+    }
+
     return next();
   } catch (err) {
     console.error("[tenantMiddleware] error:", err.message);

@@ -88,8 +88,10 @@ const registerUser = async (req, res) => {
 // @access  Private/Admin
 const getUsers = async (req, res) => {
   try {
-    const filter = req.restaurantId ? { restaurantId: req.restaurantId } : {};
-    const users = await User.find(filter).select("-password").sort({ createdAt: -1 });
+    if (!req.restaurantId) {
+      return res.status(400).json({ message: "restaurantId is required" });
+    }
+    const users = await User.find({ restaurantId: req.restaurantId }).select("-password").sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
     console.error("getUsers error", error);
@@ -105,8 +107,10 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
     const { name, email, password, isKitchen, isWaiter, salary, advance } = req.body;
 
-    const filter = { _id: id, ...(req.restaurantId ? { restaurantId: req.restaurantId } : {}) };
-    const user = await User.findOne(filter);
+    if (!req.restaurantId) {
+      return res.status(400).json({ message: "restaurantId is required" });
+    }
+    const user = await User.findOne({ _id: id, restaurantId: req.restaurantId });
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (name) user.name = name;
@@ -170,8 +174,10 @@ const updateUser = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const filter = { _id: id, ...(req.restaurantId ? { restaurantId: req.restaurantId } : {}) };
-    const user = await User.findOne(filter);
+    if (!req.restaurantId) {
+      return res.status(400).json({ message: "restaurantId is required" });
+    }
+    const user = await User.findOne({ _id: id, restaurantId: req.restaurantId });
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // prevent deleting self
