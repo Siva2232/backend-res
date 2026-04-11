@@ -1,6 +1,7 @@
 const Restaurant = require("../models/Restaurant");
 const SubscriptionPlan = require("../models/SubscriptionPlan");
 const User = require("../models/User");
+const SuperAdminNotification = require("../models/SuperAdminNotification");
 const cloudinary = require("cloudinary").v2;
 const { seedAccountsForRestaurant } = require("../utils/accSeeder");
 const { clearTenantCache } = require("../middleware/tenantMiddleware");
@@ -58,20 +59,23 @@ const getRestaurantBranding = async (req, res) => {
   try {
     const restaurant = await Restaurant.findOne(
       { restaurantId: req.params.restaurantId.toUpperCase() },
-      "restaurantId name logo primaryColor secondaryColor accentColor theme fontFamily features"
-    );
+      "restaurantId name logo primaryColor secondaryColor accentColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry"
+    ).populate("subscriptionPlan", "name price duration features");
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     // Base visual-only response — safe for unauthenticated customers
     const response = {
-      restaurantId:  restaurant.restaurantId,
-      name:          restaurant.name,
-      logo:          restaurant.logo,
-      primaryColor:  restaurant.primaryColor,
-      secondaryColor: restaurant.secondaryColor,
-      accentColor:   restaurant.accentColor,
-      theme:         restaurant.theme,
-      fontFamily:    restaurant.fontFamily,
+      restaurantId:     restaurant.restaurantId,
+      name:             restaurant.name,
+      logo:             restaurant.logo,
+      primaryColor:     restaurant.primaryColor,
+      secondaryColor:   restaurant.secondaryColor,
+      accentColor:      restaurant.accentColor,
+      theme:            restaurant.theme,
+      fontFamily:       restaurant.fontFamily,
+      subscriptionPlan:   restaurant.subscriptionPlan   || null,
+      subscriptionStatus: restaurant.subscriptionStatus || "trial",
+      subscriptionExpiry: restaurant.subscriptionExpiry || null,
     };
 
     // Only include feature flags when the request carries a valid auth token
@@ -407,8 +411,143 @@ const getAnalytics = async (req, res) => {
       waiterPanel:  await Restaurant.countDocuments({ "features.waiterPanel":  true }),
     };
 
-    res.json({ total, active, trial, expired, suspended, totalRevenue, featureUsage });
+    // Build a rolling 6-month timeline for charting
+    const now = new Date();
+    const timeline = Array.from({ length: 6 }).map((_, idx) => {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1);
+      return {
+        label: monthDate.toLocaleString('default', { month: 'short' }),
+        key: `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`,
+      };
+    });
+
+    const revenueByMonthAgg = await Restaurant.aggregate([
+      { $unwind: { path: '$paymentHistory', preserveNullAndEmptyArrays: false } },
+      { $project: {
+          yearMonth: { $dateToString: { format: '%Y-%m', date: '$paymentHistory.date' } },
+          amount: '$paymentHistory.amount'
+        }
+      },
+      { $group: {
+          _id: '$yearMonth',
+          revenue: { $sum: '$amount' },
+          orders: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const newTenantAgg = await Restaurant.aggregate([
+      { $project: {
+          yearMonth: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }
+        }
+      },
+      { $group: {
+          _id: '$yearMonth',
+          tenants: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const revenueByMonthMap = revenueByMonthAgg.reduce((map, item) => {
+      map[item._id] = item;
+      return map;
+    }, {});
+
+    const tenantGrowthMap = newTenantAgg.reduce((map, item) => {
+      map[item._id] = item.tenants;
+      return map;
+    }, {});
+
+    const revenueByMonth = timeline.map(({ label, key }) => ({
+      month: label,
+      revenue: revenueByMonthMap[key]?.revenue || 0,
+      orders: revenueByMonthMap[key]?.orders || 0,
+    }));
+
+    const growth = timeline.map(({ label, key }) => ({
+      month: label,
+      tenants: tenantGrowthMap[key] || 0,
+      revenue: revenueByMonthMap[key]?.revenue || 0,
+    }));
+
+    res.json({ total, active, trial, expired, suspended, totalRevenue, featureUsage, revenueByMonth, growth });
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Record a subscription payment & update status
+// @route   POST /api/restaurants/:restaurantId/subscription-payment
+// @access  Private (Restaurant Admin / Super Admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const recordSubscriptionPayment = async (req, res) => {
+  try {
+    const { planId, amount, method, reference, transactionId } = req.body;
+    const { restaurantId } = req.params;
+
+    const restaurant = await Restaurant.findOne({ restaurantId: restaurantId.toUpperCase() });
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    const plan = await SubscriptionPlan.findById(planId);
+    if (!plan) return res.status(404).json({ message: "Invalid subscription plan" });
+
+    // Calculate new expiry date
+    // If current subscription is active and not expired, add to current expiry
+    // Otherwise, start from today
+    let newExpiry = new Date();
+    if (restaurant.subscriptionExpiry && restaurant.subscriptionExpiry > new Date() && restaurant.subscriptionStatus === "active") {
+      newExpiry = new Date(restaurant.subscriptionExpiry);
+    }
+    newExpiry.setDate(newExpiry.getDate() + plan.duration);
+
+    // Update restaurant subscription info
+    restaurant.subscriptionPlan = plan._id;
+    restaurant.subscriptionExpiry = newExpiry;
+    
+    // Only update status to active if it's NOT manually suspended by SuperAdmin
+    if (restaurant.subscriptionStatus !== "suspended") {
+      restaurant.subscriptionStatus = "active";
+    }
+
+    // Enable features from the new plan
+    const planFeatures = plan.features.toObject ? plan.features.toObject() : plan.features;
+    for (const key of Object.keys(planFeatures)) {
+      if (planFeatures[key]) restaurant.features[key] = true;
+    }
+    restaurant.markModified("features");
+
+    // Add to payment history
+    restaurant.paymentHistory.push({
+      amount: amount || plan.price,
+      date: new Date(),
+      method: method || "online",
+      reference: reference || transactionId || "Stripe Payment",
+      plan: plan._id
+    });
+
+    await restaurant.save();
+    clearTenantCache(restaurant.restaurantId);
+
+    // --- Create Super Admin Notification ---
+    await SuperAdminNotification.create({
+      type: "payment",
+      title: "New Subscription Payment",
+      message: `${restaurant.name} upgraded to ${plan.name} plan via Stripe (₹${amount || plan.price}).`,
+      restaurantId: restaurant.restaurantId,
+      restaurantName: restaurant.name,
+      amount: amount || plan.price,
+      planName: plan.name,
+      meta: { transactionId: transactionId || reference || "", method: method || "online" }
+    });
+
+    res.json({ 
+      message: "Subscription updated successfully", 
+      expiry: newExpiry,
+      status: restaurant.subscriptionStatus 
+    });
+  } catch (err) {
+    console.error("[recordSubscriptionPayment]", err.message);
     res.status(500).json({ message: err.message });
   }
 };
@@ -422,6 +561,7 @@ module.exports = {
   updateBranding,
   updateFeatures,
   assignPlan,
+  recordSubscriptionPayment,
   deleteRestaurant,
   getAnalytics,
 };

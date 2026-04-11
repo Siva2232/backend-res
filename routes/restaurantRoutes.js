@@ -11,6 +11,7 @@ const {
   updateBranding,
   updateFeatures,
   assignPlan,
+  recordSubscriptionPayment,
   deleteRestaurant,
   getAnalytics,
 } = require("../controllers/restaurantController");
@@ -29,6 +30,7 @@ router.delete("/:restaurantId",    protect, superAdminOnly, deleteRestaurant);
 // Features & Plan — Super Admin only
 router.put("/:restaurantId/features", protect, superAdminOnly, updateFeatures);
 router.put("/:restaurantId/plan",     protect, superAdminOnly, assignPlan);
+router.post("/:restaurantId/subscription-payment", protect, recordSubscriptionPayment);
 
 // Branding — Super Admin OR own Restaurant Admin (protect validates token; 
 // controller can restrict by role if needed)
