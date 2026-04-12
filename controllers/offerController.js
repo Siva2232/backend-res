@@ -11,14 +11,19 @@ const getOffers = async (req, res) => {
 };
 
 const createOffer = async (req, res) => {
-  const Offer = await getModel("Offer", OfferModel.schema, req.restaurantId);
-  const { title, description, imageUrl, tag, isPublished } = req.body;
-  if (!title || !description || !imageUrl) {
-    return res.status(400).json({ message: "Missing required fields: title, description, imageUrl" });
+  try {
+    const Offer = await getModel("Offer", OfferModel.schema, req.restaurantId);
+    const { title, description, imageUrl, tag, isPublished } = req.body;
+    if (!title || !description || !imageUrl) {
+      return res.status(400).json({ message: "Missing required fields: title, description, imageUrl" });
+    }
+    const offer = new Offer({ title, description, imageUrl, tag, isPublished: isPublished !== undefined ? isPublished : true });
+    const createdOffer = await offer.save();
+    res.status(201).json(createdOffer);
+  } catch (error) {
+    console.error("Create offer error:", error);
+    res.status(500).json({ message: error.message || "Failed to create offer" });
   }
-  const offer = new Offer({ title, description, imageUrl, tag, isPublished });
-  const createdOffer = await offer.save();
-  res.status(201).json(createdOffer);
 };
 
 const updateOffer = async (req, res) => {

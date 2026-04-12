@@ -268,7 +268,7 @@ const updateFeatures = async (req, res) => {
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     // Merge incoming features (only update provided keys)
-    const allowed = ["hr", "accounting", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel"];
+    const allowed = ["hr", "accounting", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         restaurant.features[key] = Boolean(req.body[key]);

@@ -40,12 +40,14 @@ const getParty = async (req, res) => {
 // @route POST /api/acc/parties
 const createParty = async (req, res) => {
   try {
-    const party = await (await AccParty(req)).create({
+    const Party = await AccParty(req);
+    const party = await Party.create({
       ...req.body,
       balance: req.body.openingBalance || 0,
     });
     res.status(201).json(party);
   } catch (err) {
+    console.error("Create party error:", err);
     res.status(400).json({ message: err.message });
   }
 };

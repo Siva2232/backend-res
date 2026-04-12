@@ -9,16 +9,21 @@ const getBanners = async (req, res) => {
 };
 
 const createBanner = async (req, res) => {
-  const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
-  const { title, description, imageUrl, tag } = req.body;
-  
-  if (!title || !description || !imageUrl) {
-    return res.status(400).json({ message: "Missing required fields: title, description, and imageUrl are strictly required." });
-  }
+  try {
+    const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
+    const { title, description, imageUrl, tag } = req.body;
+    
+    if (!title || !description || !imageUrl) {
+      return res.status(400).json({ message: "Missing required fields: title, description, and imageUrl are strictly required." });
+    }
 
-  const banner = new Banner({ title, description, imageUrl, tag });
-  const createdBanner = await banner.save();
-  res.status(201).json(createdBanner);
+    const banner = new Banner({ title, description, imageUrl, tag });
+    const createdBanner = await banner.save();
+    res.status(201).json(createdBanner);
+  } catch (error) {
+    console.error("Create banner error:", error);
+    res.status(500).json({ message: error.message || "Failed to create banner" });
+  }
 };
 
 const updateBanner = async (req, res) => {

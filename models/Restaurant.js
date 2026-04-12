@@ -36,6 +36,8 @@ const restaurantSchema = new mongoose.Schema(
       onlineOrders:  { type: Boolean, default: false },
       kitchenPanel:  { type: Boolean, default: true },
       waiterPanel:   { type: Boolean, default: true },
+      waiterCall:    { type: Boolean, default: true },
+      billRequest:   { type: Boolean, default: true },
     },
 
     // Subscription
