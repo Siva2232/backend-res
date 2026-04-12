@@ -98,6 +98,7 @@ const importData = async () => {
       email: "admin@example.com",
       password: "password123",
       isAdmin: true,
+      role: "admin",
     });
 
     // Add a default kitchen staff user
@@ -108,6 +109,7 @@ const importData = async () => {
       isAdmin: false,
       isKitchen: true,
       salary: 15000,
+      role: "kitchen",
     });
 
     // Add a default waiter user
@@ -119,7 +121,23 @@ const importData = async () => {
       isKitchen: false,
       isWaiter: true,
       salary: 12000,
+      role: "waiter",
     });
+
+    // Add a default support team user for the customer support panel
+    const supportUser = await User.create({
+      name: "Hari Krishnan",
+      email: "support@platform.com",
+      password: "Support@123",
+      isAdmin: false,
+      isKitchen: false,
+      isWaiter: false,
+      salary: 0,
+      role: "support",
+    });
+    console.log("Support Agent Created!");
+    console.log("  Email   : support@platform.com");
+    console.log("  Password: Support@123");
 
     await Product.insertMany(products);
     await Banner.insertMany(banners);

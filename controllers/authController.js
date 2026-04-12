@@ -99,6 +99,66 @@ const getUsers = async (req, res) => {
   }
 };
 
+// @desc    Create a support team user (superadmin only)
+// @route   POST /api/auth/support-team
+// @access  Private/SuperAdmin
+const createSupportUser = async (req, res) => {
+  try {
+    if (req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "Name, email, and password are required" });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: "support",
+      isAdmin: false,
+      isKitchen: false,
+      isWaiter: false,
+      salary: 0,
+      restaurantId: null,
+    });
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (error) {
+    console.error("createSupportUser error", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Get all support team users (superadmin only)
+// @route   GET /api/auth/support-team
+// @access  Private/SuperAdmin
+const getSupportUsers = async (req, res) => {
+  try {
+    if (req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const supportUsers = await User.find({ role: "support" }).select("-password").sort({ createdAt: -1 });
+    res.json(supportUsers);
+  } catch (error) {
+    console.error("getSupportUsers error", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // @desc    Update a user (admin only)
 // @route   PUT /api/auth/users/:id
 // @access  Private/Admin
@@ -192,4 +252,52 @@ const deleteUser = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-module.exports = { authUser, registerUser, getUsers, updateUser, deleteUser };
+
+// @desc    Get current session profile
+// @route   GET /api/auth/profile
+const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Update current session profile
+// @route   PUT /api/auth/profile
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.name = req.body.name || user.name;
+    user.email = req.body.email || user.email;
+    if (req.body.password) {
+      user.password = req.body.password;
+    }
+
+    const updatedUser = await user.save();
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      role: updatedUser.role,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+module.exports = { 
+  authUser, 
+  registerUser, 
+  getUsers, 
+  createSupportUser, 
+  getSupportUsers, 
+  updateUser, 
+  deleteUser,
+  getProfile,
+  updateProfile
+};
+

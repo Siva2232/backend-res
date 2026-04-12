@@ -32,6 +32,7 @@ const restaurantRoutes = require("./routes/restaurantRoutes");
 const subscriptionPlanRoutes = require("./routes/subscriptionPlanRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const saNotificationRoutes = require("./routes/saNotificationRoutes");
+const supportTicketRoutes = require("./routes/supportTicketRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { tenantMiddleware } = require("./middleware/tenantMiddleware");
 const { requireFeature } = require("./middleware/featureMiddleware");
@@ -233,6 +234,10 @@ app.use("/api/reservations", tenantMiddleware, reservationRoutes);
 // ─── Non-tenant routes (platform-level) ──────────────────────────────────
 // Auth uses the shared User collection (no per-restaurant DB needed)
 app.use("/api/auth", authRoutes);
+
+// Support Tickets — Platform-level to avoid per-restaurant DB limits
+app.use("/api/support-tickets", supportTicketRoutes);
+
 // HR Module Routes — feature guard applied inside routes that need it
 // (HR staff /login is public, so we can't guard at app.use level)
 app.use("/api/hr/staff", tenantMiddleware, hrStaffRoutes);

@@ -11,7 +11,7 @@ const userSchema = mongoose.Schema(
     // Unified role field alongside legacy booleans
     role: {
       type: String,
-      enum: ["admin", "kitchen", "waiter", "hr", "superadmin"],
+      enum: ["admin", "kitchen", "waiter", "hr", "support", "superadmin"],
       default: "admin",
     },
     isAdmin: { type: Boolean, required: true, default: true },

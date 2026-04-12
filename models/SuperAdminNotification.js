@@ -4,7 +4,7 @@ const superAdminNotificationSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["payment", "new_restaurant", "subscription_expiry", "suspension", "system"],
+      enum: ["payment", "new_restaurant", "subscription_expiry", "suspension", "system", "support_ticket"],
       default: "payment",
       required: true,
     },

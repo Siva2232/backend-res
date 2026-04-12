@@ -20,6 +20,8 @@ const restaurantSchema = new mongoose.Schema(
     primaryColor:   { type: String, default: "#f72585" },
     secondaryColor: { type: String, default: "#0f172a" },
     accentColor:    { type: String, default: "#7209b7" },
+    sidebarBgColor: { type: String, default: "#ffffff" },
+    sidebarTextColor: { type: String, default: "#0f172a" },
     theme:          { type: String, enum: ["light", "dark"], default: "light" },
     fontFamily:     { type: String, default: "Inter" },
     customDomain:   { type: String, default: "" },

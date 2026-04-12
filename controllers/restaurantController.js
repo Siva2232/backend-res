@@ -2,7 +2,7 @@ const Restaurant = require("../models/Restaurant");
 const SubscriptionPlan = require("../models/SubscriptionPlan");
 const User = require("../models/User");
 const SuperAdminNotification = require("../models/SuperAdminNotification");
-const cloudinary = require("cloudinary").v2;
+
 const { seedAccountsForRestaurant } = require("../utils/accSeeder");
 const { clearTenantCache } = require("../middleware/tenantMiddleware");
 
@@ -59,7 +59,7 @@ const getRestaurantBranding = async (req, res) => {
   try {
     const restaurant = await Restaurant.findOne(
       { restaurantId: req.params.restaurantId.toUpperCase() },
-      "restaurantId name logo primaryColor secondaryColor accentColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry"
+      "restaurantId name logo primaryColor secondaryColor accentColor sidebarBgColor sidebarTextColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry"
     ).populate("subscriptionPlan", "name price duration features");
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
@@ -71,6 +71,8 @@ const getRestaurantBranding = async (req, res) => {
       primaryColor:     restaurant.primaryColor,
       secondaryColor:   restaurant.secondaryColor,
       accentColor:      restaurant.accentColor,
+      sidebarBgColor:   restaurant.sidebarBgColor,
+      sidebarTextColor: restaurant.sidebarTextColor,
       theme:            restaurant.theme,
       fontFamily:       restaurant.fontFamily,
       subscriptionPlan:   restaurant.subscriptionPlan   || null,
@@ -121,6 +123,8 @@ const createRestaurant = async (req, res) => {
       primaryColor,
       secondaryColor,
       accentColor,
+      sidebarBgColor,
+      sidebarTextColor,
       theme,
       fontFamily,
       customDomain,
@@ -145,16 +149,8 @@ const createRestaurant = async (req, res) => {
     const existing = await Restaurant.findOne({ restaurantId });
     if (existing) return res.status(400).json({ message: `restaurantId '${restaurantId}' already exists` });
 
-    // Upload logo to Cloudinary if base64 provided
-    let logoUrl = "";
-    if (logoBase64) {
-      const uploaded = await cloudinary.uploader.upload(logoBase64, {
-        folder: "restaurant_logos",
-        public_id: `logo_${restaurantId}`,
-        overwrite: true,
-      });
-      logoUrl = uploaded.secure_url;
-    }
+    // Save logo directly to MongoDB as Base64 string
+    let logoUrl = logoBase64 || "";
 
     const restaurant = await Restaurant.create({
       restaurantId,
@@ -163,6 +159,8 @@ const createRestaurant = async (req, res) => {
       primaryColor:   primaryColor   || "#f72585",
       secondaryColor: secondaryColor || "#0f172a",
       accentColor:    accentColor    || "#7209b7",
+      sidebarBgColor: sidebarBgColor || "#ffffff",
+      sidebarTextColor: sidebarTextColor || "#0f172a",
       theme:          theme          || "light",
       fontFamily:     fontFamily     || "Inter",
       customDomain:   customDomain   || "",
@@ -218,7 +216,17 @@ const createRestaurant = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const updateBranding = async (req, res) => {
   try {
-    const { primaryColor, secondaryColor, accentColor, theme, fontFamily, customDomain, logoBase64 } = req.body;
+    const { 
+      primaryColor, 
+      secondaryColor, 
+      accentColor, 
+      sidebarBgColor, 
+      sidebarTextColor, 
+      theme, 
+      fontFamily, 
+      customDomain, 
+      logoBase64 
+    } = req.body;
 
     const restaurant = await Restaurant.findOne({
       restaurantId: req.params.restaurantId.toUpperCase(),
@@ -228,18 +236,15 @@ const updateBranding = async (req, res) => {
     if (primaryColor)   restaurant.primaryColor   = primaryColor;
     if (secondaryColor) restaurant.secondaryColor = secondaryColor;
     if (accentColor)    restaurant.accentColor    = accentColor;
+    if (sidebarBgColor) restaurant.sidebarBgColor = sidebarBgColor;
+    if (sidebarTextColor) restaurant.sidebarTextColor = sidebarTextColor;
     if (theme)          restaurant.theme          = theme;
     if (fontFamily)     restaurant.fontFamily     = fontFamily;
     if (customDomain !== undefined) restaurant.customDomain = customDomain;
 
-    // New logo upload
+    // Save logo directly to MongoDB as Base64 string
     if (logoBase64) {
-      const uploaded = await cloudinary.uploader.upload(logoBase64, {
-        folder: "restaurant_logos",
-        public_id: `logo_${restaurant.restaurantId}`,
-        overwrite: true,
-      });
-      restaurant.logo = uploaded.secure_url;
+      restaurant.logo = logoBase64;
     }
 
     await restaurant.save();
