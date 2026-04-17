@@ -163,12 +163,17 @@ const getPayrollById = async (req, res) => {
 // @route PUT /api/hr/payroll/:id
 const updatePayroll = async (req, res) => {
   try {
-    const allowed = ['bonus', 'overtime', 'status', 'notes', 'paidAt'];
-    const payroll = await (await HRPayroll(req)).findById(req.params.id);
+    const allowed = ['bonus', 'overtime', 'status', 'notes', 'paidAt', 'paymentMode'];
+    const payroll = await (await HRPayroll(req)).findById(req.params.id)
+      .populate('staff', 'name');
     if (!payroll) return res.status(404).json({ message: 'Payroll not found' });
     
+    const wasPaid = payroll.status === 'paid';
     allowed.forEach((k) => { if (req.body[k] !== undefined) payroll[k] = req.body[k]; });
-    if (payroll.status === 'paid' && !payroll.paidAt) payroll.paidAt = new Date();
+    
+    if (payroll.status === 'paid' && !wasPaid) {
+      payroll.paidAt = payroll.paidAt || new Date();
+    }
 
     await payroll.save();
     const populated = await (await HRPayroll(req)).findById(payroll._id).populate('staff', 'name email designation department baseSalary');

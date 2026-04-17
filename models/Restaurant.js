@@ -29,7 +29,6 @@ const restaurantSchema = new mongoose.Schema(
     // Feature flags — controlled by Super Admin only
     features: {
       hr:            { type: Boolean, default: true },
-      accounting:    { type: Boolean, default: true },
       inventory:     { type: Boolean, default: false },
       reports:       { type: Boolean, default: true },
       qrMenu:        { type: Boolean, default: true },

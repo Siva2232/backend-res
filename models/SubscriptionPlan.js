@@ -11,7 +11,6 @@ const subscriptionPlanSchema = new mongoose.Schema(
     // Which features are included in this plan
     features: {
       hr:           { type: Boolean, default: false },
-      accounting:   { type: Boolean, default: false },
       inventory:    { type: Boolean, default: false },
       reports:      { type: Boolean, default: true },
       qrMenu:       { type: Boolean, default: true },

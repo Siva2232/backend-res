@@ -27,12 +27,12 @@ const hrAttendanceRoutes = require("./routes/hrAttendanceRoutes");
 const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
 const hrShiftRoutes = require("./routes/hrShiftRoutes");
 const hrPayrollRoutes = require("./routes/hrPayrollRoutes");
-const accRoutes = require("./routes/accRoutes");
 const restaurantRoutes = require("./routes/restaurantRoutes");
 const subscriptionPlanRoutes = require("./routes/subscriptionPlanRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const saNotificationRoutes = require("./routes/saNotificationRoutes");
 const supportTicketRoutes = require("./routes/supportTicketRoutes");
+const accRoutes = require("./routes/accRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { tenantMiddleware } = require("./middleware/tenantMiddleware");
 const { requireFeature } = require("./middleware/featureMiddleware");
@@ -64,9 +64,6 @@ connectDB()
     const { initHRCronJobs, initSubscriptionCronJobs } = require('./services/cronService');
     initHRCronJobs();
     initSubscriptionCronJobs();
-    // Seed accounting Chart of Accounts
-    const { seedAccounts } = require('./utils/accSeeder');
-    seedAccounts();
     // start listening after DB is connected
     server.listen(PORT, () =>
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
@@ -245,13 +242,12 @@ app.use("/api/hr/attendance", tenantMiddleware, hrAttendanceRoutes);
 app.use("/api/hr/leaves", tenantMiddleware, hrLeaveRoutes);
 app.use("/api/hr/shifts", tenantMiddleware, hrShiftRoutes);
 app.use("/api/hr/payroll", tenantMiddleware, hrPayrollRoutes);
-// Accounting / Tally Module Routes — all routes require auth already via router.use(protect)
-app.use("/api/acc", tenantMiddleware, accRoutes);
 // SaaS Multi-Tenant Routes (platform-level, no per-restaurant DB)
 app.use("/api/restaurants", restaurantRoutes);
 app.use("/api/plans", subscriptionPlanRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/sa-notifications", saNotificationRoutes);
+app.use("/api/accounting", accRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

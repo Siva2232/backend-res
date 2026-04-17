@@ -3,7 +3,6 @@ const SubscriptionPlan = require("../models/SubscriptionPlan");
 const User = require("../models/User");
 const SuperAdminNotification = require("../models/SuperAdminNotification");
 
-const { seedAccountsForRestaurant } = require("../utils/accSeeder");
 const { clearTenantCache } = require("../middleware/tenantMiddleware");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +87,17 @@ const getRestaurantBranding = async (req, res) => {
     if (authHeader && authHeader.startsWith("Bearer ")) {
       try {
         jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
-        response.features = restaurant.features;
+        response.features = {
+          hr:           restaurant.features?.hr ?? false,
+          inventory:    restaurant.features?.inventory ?? false,
+          reports:      restaurant.features?.reports ?? false,
+          qrMenu:       restaurant.features?.qrMenu ?? false,
+          onlineOrders: restaurant.features?.onlineOrders ?? false,
+          kitchenPanel: restaurant.features?.kitchenPanel ?? false,
+          waiterPanel:  restaurant.features?.waiterPanel ?? false,
+          waiterCall:   restaurant.features?.waiterCall ?? false,
+          billRequest:  restaurant.features?.billRequest ?? false,
+        };
       } catch (_) {
         // invalid/expired token — treat as public request
         response.features = {
@@ -191,13 +200,6 @@ const createRestaurant = async (req, res) => {
       });
     }
 
-    // Seed the new restaurant's database with default Chart of Accounts
-    try {
-      await seedAccountsForRestaurant(restaurantId);
-    } catch (seedErr) {
-      console.error(`[createRestaurant] Failed to seed accounts for ${restaurantId}:`, seedErr.message);
-    }
-
     res.status(201).json({
       ...restaurant.toObject(),
       ownerCreated: !!ownerUser,
@@ -268,7 +270,7 @@ const updateFeatures = async (req, res) => {
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     // Merge incoming features (only update provided keys)
-    const allowed = ["hr", "accounting", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
+    const allowed = ["hr", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         restaurant.features[key] = Boolean(req.body[key]);
@@ -304,7 +306,8 @@ const assignPlan = async (req, res) => {
 
     // Enable features included in the plan
     const planFeatures = plan.features.toObject ? plan.features.toObject() : plan.features;
-    for (const key of Object.keys(planFeatures)) {
+    const allowedFeatures = ["hr", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
+    for (const key of allowedFeatures) {
       if (planFeatures[key]) restaurant.features[key] = true;
     }
     restaurant.markModified("features");
@@ -408,7 +411,6 @@ const getAnalytics = async (req, res) => {
     // Feature usage stats
     const featureUsage = {
       hr:           await Restaurant.countDocuments({ "features.hr":           true }),
-      accounting:   await Restaurant.countDocuments({ "features.accounting":   true }),
       inventory:    await Restaurant.countDocuments({ "features.inventory":    true }),
       onlineOrders: await Restaurant.countDocuments({ "features.onlineOrders": true }),
       qrMenu:       await Restaurant.countDocuments({ "features.qrMenu":       true }),

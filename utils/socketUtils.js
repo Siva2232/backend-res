@@ -1,5 +1,5 @@
 /**
- * Socket.io Real-time Utility for HR & Accounting
+ * Socket.io Real-time Utility for HR and restaurant notifications
  * Emits events scoped to the restaurant room.
  */
 const emitUpdate = (req, event, data) => {

@@ -36,19 +36,11 @@ const COLLECTION_MAP = {
   HRLeave:        "leaves",
   HRShift:        "shifts",
   HRPayroll:      "payroll",
-  AccAccount:     "acc_accounts",
-  AccExpense:     "acc_expenses",
-  AccLedgerEntry: "acc_ledger",
-  AccLoan:        "acc_loans",
-  AccOrder:       "acc_orders",
-  AccParty:       "acc_parties",
-  AccPayment:     "acc_payments",
-  AccPurchase:    "acc_purchases",
+  AccLedger:      "acc_ledgers",
+  AccTransaction: "acc_transactions",
 };
 
 // Lazily-loaded map of all model schemas.
-// Loaded once on first use to avoid circular-dependency issues at module init.
-let _allSchemas = null;
 function _getSchemas() {
   if (_allSchemas) return _allSchemas;
   _allSchemas = {
@@ -69,14 +61,8 @@ function _getSchemas() {
     HRLeave:        require('../models/HRLeave').schema,
     HRShift:        require('../models/HRShift').schema,
     HRPayroll:      require('../models/HRPayroll').schema,
-    AccAccount:     require('../models/AccAccount').schema,
-    AccExpense:     require('../models/AccExpense').schema,
-    AccLedgerEntry: require('../models/AccLedgerEntry').schema,
-    AccLoan:        require('../models/AccLoan').schema,
-    AccOrder:       require('../models/AccOrder').schema,
-    AccParty:       require('../models/AccParty').schema,
-    AccPayment:     require('../models/AccPayment').schema,
-    AccPurchase:    require('../models/AccPurchase').schema,
+    AccLedger:      require('../models/AccLedger').schema,
+    AccTransaction: require('../models/AccTransaction').schema,
   };
   return _allSchemas;
 }
