@@ -17,6 +17,8 @@
 
 const { getConnection } = require("./dbConnection");
 
+let _allSchemas;
+
 // Map from logical model name → MongoDB collection name
 const COLLECTION_MAP = {
   Product:        "products",

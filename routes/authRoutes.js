@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { authUser, registerUser, getUsers, updateUser, deleteUser, createSupportUser, getSupportUsers, getProfile, updateProfile } = require("../controllers/authController");
+const { authUser, registerUser, getUsers, updateUser, deleteUser, createSupportUser, getSupportUsers, getProfile, updateProfile, changePassword } = require("../controllers/authController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
 router.post("/login", authUser);
@@ -9,6 +9,7 @@ router.post("/register", registerUser);
 // Profile routes (Any role)
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
+router.put("/profile/password", protect, changePassword);
 
 // list all users (admin only)
 router.get("/users", protect, admin, getUsers);
