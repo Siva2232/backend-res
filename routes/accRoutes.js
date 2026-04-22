@@ -13,6 +13,7 @@ router.get("/ledgers", accController.getLedgers);
 router.get("/ledgers/:id/history", accController.getLedgerHistory);
 router.post("/ledgers", accController.createLedger);
 router.get("/transactions", accController.getTransactions);
+router.get("/reports", accController.getReports);
 router.post("/bill-payment", accController.createBillTransaction);
 
 module.exports = router;

@@ -101,6 +101,81 @@ exports.getTransactions = async (req, res) => {
   }
 };
 
+exports.getReports = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const rid = req.restaurantId;
+    const TransactionModel = await getModel("AccTransaction", AccTransactionBase.schema, rid);
+    const LedgerModel = await getModel("AccLedger", AccLedgerBase.schema, rid);
+
+    const query = { restaurantId: rid };
+    if (startDate && endDate) {
+      query.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    const transactions = await TransactionModel.find(query).populate("entries.ledger").sort({ date: 1 });
+
+    const reportData = {
+      summary: {
+        totalIncome: 0,
+        totalExpenses: 0,
+        netProfit: 0,
+        cashInHand: 0,
+        bankBalance: 0,
+      },
+      chartData: [], // { date, income, expense }
+      incomeByLedger: {},
+      expenseByLedger: {},
+      recentTransactions: transactions.slice(-10).reverse(),
+    };
+
+    const dailyMap = {};
+
+    for (const tx of transactions) {
+      const dateStr = tx.date.toISOString().split("T")[0];
+      if (!dailyMap[dateStr]) {
+        dailyMap[dateStr] = { date: dateStr, income: 0, expense: 0 };
+      }
+
+      for (const entry of tx.entries) {
+        const ledger = entry.ledger;
+        if (!ledger) continue;
+
+        const amount = entry.amount;
+
+        if (ledger.type === "income") {
+          const inc = entry.type === "credit" ? amount : -amount;
+          reportData.summary.totalIncome += inc;
+          dailyMap[dateStr].income += inc;
+          reportData.incomeByLedger[ledger.name] = (reportData.incomeByLedger[ledger.name] || 0) + inc;
+        } else if (ledger.type === "expense") {
+          const exp = entry.type === "debit" ? amount : -amount;
+          reportData.summary.totalExpenses += exp;
+          dailyMap[dateStr].expense += exp;
+          reportData.expenseByLedger[ledger.name] = (reportData.expenseByLedger[ledger.name] || 0) + exp;
+        }
+
+        if (ledger.code === "CASH_001") {
+          reportData.summary.cashInHand += entry.type === "debit" ? amount : -amount;
+        } else if (ledger.code === "BANK_001") {
+          reportData.summary.bankBalance += entry.type === "debit" ? amount : -amount;
+        }
+      }
+    }
+
+    reportData.summary.netProfit = reportData.summary.totalIncome - reportData.summary.totalExpenses;
+    reportData.chartData = Object.values(dailyMap);
+
+    res.json(reportData);
+  } catch (error) {
+    console.error("Get Reports Error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 exports.getLedgerHistory = async (req, res) => {
   try {
     const { id } = req.params;
