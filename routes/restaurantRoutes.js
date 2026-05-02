@@ -6,6 +6,7 @@ const {
   getRestaurants,
   getRestaurantById,
   getRestaurantBranding,
+  getRestaurantFeatures,
   createRestaurant,
   updateRestaurant,
   updateBranding,
@@ -16,24 +17,22 @@ const {
   getAnalytics,
 } = require("../controllers/restaurantController");
 
-// Public — used on login to inject theme
-router.get("/:restaurantId/branding", getRestaurantBranding);
+// ── Collection-level & fixed paths first (must come before :param routes) ──
+router.get("/analytics/overview",    protect, superAdminOnly, getAnalytics);
+router.get("/",                      protect, superAdminOnly, getRestaurants);
+router.post("/",                     protect, superAdminOnly, createRestaurant);
 
-// Super Admin only
-router.get("/analytics/overview", protect, superAdminOnly, getAnalytics);
-router.get("/",                    protect, superAdminOnly, getRestaurants);
-router.post("/",                   protect, superAdminOnly, createRestaurant);
-router.get("/:restaurantId",       protect, superAdminOnly, getRestaurantById);
-router.put("/:restaurantId",       protect, superAdminOnly, updateRestaurant);
-router.delete("/:restaurantId",    protect, superAdminOnly, deleteRestaurant);
-
-// Features & Plan — Super Admin only
+// ── Two-segment param routes (specific before generic /:restaurantId) ─────
+router.get("/:restaurantId/branding", getRestaurantBranding);          // public
+router.get("/:restaurantId/features", protect, getRestaurantFeatures); // any admin
 router.put("/:restaurantId/features", protect, superAdminOnly, updateFeatures);
 router.put("/:restaurantId/plan",     protect, superAdminOnly, assignPlan);
 router.post("/:restaurantId/subscription-payment", protect, recordSubscriptionPayment);
-
-// Branding — Super Admin OR own Restaurant Admin (protect validates token; 
-// controller can restrict by role if needed)
 router.put("/:restaurantId/branding", protect, updateBranding);
+
+// ── Single-segment param routes (must come last) ──────────────────────────
+router.get("/:restaurantId",    protect, superAdminOnly, getRestaurantById);
+router.put("/:restaurantId",    protect, superAdminOnly, updateRestaurant);
+router.delete("/:restaurantId", protect, superAdminOnly, deleteRestaurant);
 
 module.exports = router;

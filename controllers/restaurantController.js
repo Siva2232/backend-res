@@ -97,6 +97,10 @@ const getRestaurantBranding = async (req, res) => {
           waiterPanel:  restaurant.features?.waiterPanel ?? false,
           waiterCall:   restaurant.features?.waiterCall ?? false,
           billRequest:  restaurant.features?.billRequest ?? false,
+          accounting:   restaurant.features?.accounting ?? true,
+          hrStaff:      restaurant.features?.hrStaff ?? true,
+          hrAttendance: restaurant.features?.hrAttendance ?? true,
+          hrLeaves:     restaurant.features?.hrLeaves ?? true,
         };
       } catch (_) {
         // invalid/expired token — treat as public request
@@ -258,6 +262,41 @@ const updateBranding = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Read ALL feature flags for an admin panel (complete set, auth required)
+// @route   GET /api/restaurants/:restaurantId/features
+// @access  Private (admin token) — never returns partial / cached data
+// ─────────────────────────────────────────────────────────────────────────────
+const getRestaurantFeatures = async (req, res) => {
+  try {
+    const restaurant = await Restaurant.findOne(
+      { restaurantId: req.params.restaurantId.toUpperCase() },
+      "features"
+    );
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    const f = restaurant.features || {};
+    // Explicit defaults so missing DB fields never silently hide a feature
+    res.json({
+      hr:           f.hr           ?? true,
+      inventory:    f.inventory    ?? false,
+      reports:      f.reports      ?? true,
+      qrMenu:       f.qrMenu       ?? true,
+      onlineOrders: f.onlineOrders ?? false,
+      kitchenPanel: f.kitchenPanel ?? true,
+      waiterPanel:  f.waiterPanel  ?? true,
+      waiterCall:   f.waiterCall   ?? true,
+      billRequest:  f.billRequest  ?? true,
+      accounting:   f.accounting   ?? true,
+      hrStaff:      f.hrStaff      ?? true,
+      hrAttendance: f.hrAttendance ?? true,
+      hrLeaves:     f.hrLeaves     ?? true,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Assign / update feature flags  (Super Admin ONLY)
 // @route   PUT /api/restaurants/:restaurantId/features
 // @access  Private/SuperAdmin
@@ -270,7 +309,21 @@ const updateFeatures = async (req, res) => {
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     // Merge incoming features (only update provided keys)
-    const allowed = ["hr", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
+    const allowed = [
+      "hr",
+      "inventory",
+      "reports",
+      "qrMenu",
+      "onlineOrders",
+      "kitchenPanel",
+      "waiterPanel",
+      "waiterCall",
+      "billRequest",
+      "accounting",
+      "hrStaff",
+      "hrAttendance",
+      "hrLeaves",
+    ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         restaurant.features[key] = Boolean(req.body[key]);
@@ -306,7 +359,21 @@ const assignPlan = async (req, res) => {
 
     // Enable features included in the plan
     const planFeatures = plan.features.toObject ? plan.features.toObject() : plan.features;
-    const allowedFeatures = ["hr", "inventory", "reports", "qrMenu", "onlineOrders", "kitchenPanel", "waiterPanel", "waiterCall", "billRequest"];
+    const allowedFeatures = [
+      "hr",
+      "inventory",
+      "reports",
+      "qrMenu",
+      "onlineOrders",
+      "kitchenPanel",
+      "waiterPanel",
+      "waiterCall",
+      "billRequest",
+      "accounting",
+      "hrStaff",
+      "hrAttendance",
+      "hrLeaves",
+    ];
     for (const key of allowedFeatures) {
       if (planFeatures[key]) restaurant.features[key] = true;
     }
@@ -563,6 +630,7 @@ module.exports = {
   getRestaurants,
   getRestaurantById,
   getRestaurantBranding,
+  getRestaurantFeatures,
   createRestaurant,
   updateRestaurant,
   updateBranding,

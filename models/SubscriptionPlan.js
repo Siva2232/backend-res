@@ -17,6 +17,10 @@ const subscriptionPlanSchema = new mongoose.Schema(
       onlineOrders: { type: Boolean, default: false },
       kitchenPanel: { type: Boolean, default: true },
       waiterPanel:  { type: Boolean, default: true },
+      accounting:   { type: Boolean, default: true },
+      hrStaff:         { type: Boolean, default: true },
+      hrAttendance:    { type: Boolean, default: true },
+      hrLeaves:        { type: Boolean, default: true },
     },
 
     // Soft limits

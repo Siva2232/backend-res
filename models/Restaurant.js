@@ -37,6 +37,11 @@ const restaurantSchema = new mongoose.Schema(
       waiterPanel:   { type: Boolean, default: true },
       waiterCall:    { type: Boolean, default: true },
       billRequest:   { type: Boolean, default: true },
+      accounting:    { type: Boolean, default: true },
+      /** HR sub-modules (in addition to top-level `hr`) */
+      hrStaff:         { type: Boolean, default: true },
+      hrAttendance:    { type: Boolean, default: true },
+      hrLeaves:        { type: Boolean, default: true },
     },
 
     // Subscription
