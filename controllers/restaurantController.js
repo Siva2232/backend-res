@@ -254,6 +254,7 @@ const updateBranding = async (req, res) => {
     }
 
     await restaurant.save();
+    clearTenantCache(restaurant.restaurantId); // Instantly propagate branding/theme changes
     res.json({ message: "Branding updated", restaurant });
   } catch (err) {
     console.error("[updateBranding]", err.message);
@@ -308,6 +309,17 @@ const updateFeatures = async (req, res) => {
     });
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
+    // Support both payload shapes:
+    // - { hr: true, ... }
+    // - { features: { hr: true, ... } }
+    const incoming = (req.body && typeof req.body === "object" && req.body.features && typeof req.body.features === "object")
+      ? req.body.features
+      : req.body;
+
+    if (!restaurant.features || typeof restaurant.features !== "object") {
+      restaurant.features = {};
+    }
+
     // Merge incoming features (only update provided keys)
     const allowed = [
       "hr",
@@ -325,12 +337,13 @@ const updateFeatures = async (req, res) => {
       "hrLeaves",
     ];
     for (const key of allowed) {
-      if (req.body[key] !== undefined) {
-        restaurant.features[key] = Boolean(req.body[key]);
+      if (incoming && incoming[key] !== undefined) {
+        restaurant.features[key] = Boolean(incoming[key]);
       }
     }
     restaurant.markModified("features");
     await restaurant.save();
+    clearTenantCache(restaurant.restaurantId); // Instantly propagate feature gating/navigation
     res.json({ message: "Features updated", features: restaurant.features });
   } catch (err) {
     res.status(500).json({ message: err.message });
