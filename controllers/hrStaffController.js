@@ -76,6 +76,21 @@ const getAllStaff = async (req, res) => {
   }
 };
 
+// @desc  Active staff flagged as POS cashiers (for bill print dropdown)
+// @route GET /api/hr/staff/cashiers
+const getCashiers = async (req, res) => {
+  try {
+    const list = await (await HRStaff(req))
+      .find({ isCashier: true, status: 'active' })
+      .select('name')
+      .sort({ name: 1 })
+      .lean();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // @desc  Get single staff profile
 // @route GET /api/hr/staff/:id
 const getStaffById = async (req, res) => {
@@ -108,7 +123,8 @@ const createStaff = async (req, res) => {
       address, 
       gender, 
       dateOfBirth, 
-      emergencyContact 
+      emergencyContact,
+      isCashier,
     } = req.body;
 
     if (!name || !email || !password)
@@ -150,6 +166,7 @@ const createStaff = async (req, res) => {
     const staff = await (await HRStaff(req)).create({
       name, email, password, phone, role, department, designation,
       joiningDate, status, baseSalary, address, gender, dateOfBirth, emergencyContact,
+      isCashier: Boolean(isCashier),
     });
 
     const result = staff.toObject();
@@ -305,6 +322,6 @@ const changeMyPassword = async (req, res) => {
 };
 
 module.exports = {
-  loginStaff, getAllStaff, getStaffById, createStaff, updateStaff,
+  loginStaff, getAllStaff, getCashiers, getStaffById, createStaff, updateStaff,
   deleteStaff, uploadDocument, deleteDocument, getMyProfile, changeMyPassword,
 };

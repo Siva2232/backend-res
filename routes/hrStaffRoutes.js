@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
-  loginStaff, getAllStaff, getStaffById, createStaff, updateStaff,
+  loginStaff, getAllStaff, getCashiers, getStaffById, createStaff, updateStaff,
   deleteStaff, uploadDocument, deleteDocument, getMyProfile, changeMyPassword,
 } = require('../controllers/hrStaffController');
 const { protectHR, hrAdmin, hrAdminOnly, protectAny, anyAdmin, anyAdminOnly } = require('../middleware/hrAuthMiddleware');
@@ -16,6 +16,7 @@ router.put('/me/password', protectHR, changeMyPassword);
 // Admin / Manager only — accepts POS admin token OR HR admin/manager token
 router.get('/', protectAny, anyAdmin, getAllStaff);
 router.post('/', protectAny, anyAdminOnly, createStaff);
+router.get('/cashiers', protectAny, anyAdmin, getCashiers);
 router.get('/:id', protectAny, anyAdmin, getStaffById);
 router.put('/:id', protectAny, anyAdmin, updateStaff);
 router.delete('/:id', protectAny, anyAdminOnly, deleteStaff);

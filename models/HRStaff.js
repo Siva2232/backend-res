@@ -35,6 +35,8 @@ const hrStaffSchema = new mongoose.Schema(
     avatar: { type: String },
     // Shift assignment stored here for quick lookup
     currentShift: { type: mongoose.Schema.Types.ObjectId, ref: 'HRShift' },
+    /** When true, included in POS cashier dropdown (bill / split bill print). Managed from HR Staff screen. */
+    isCashier: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
