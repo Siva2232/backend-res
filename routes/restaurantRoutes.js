@@ -9,6 +9,7 @@ const {
   getRestaurantFeatures,
   createRestaurant,
   updateRestaurant,
+  updateOwnerEmail,
   updateBranding,
   updateFeatures,
   assignPlan,
@@ -29,6 +30,7 @@ router.put("/:restaurantId/features", protect, superAdminOnly, updateFeatures);
 router.put("/:restaurantId/plan",     protect, superAdminOnly, assignPlan);
 router.post("/:restaurantId/subscription-payment", protect, recordSubscriptionPayment);
 router.put("/:restaurantId/branding", protect, updateBranding);
+router.put("/:restaurantId/owner-email", protect, updateOwnerEmail);
 
 // ── Single-segment param routes (must come last) ──────────────────────────
 router.get("/:restaurantId",    protect, superAdminOnly, getRestaurantById);

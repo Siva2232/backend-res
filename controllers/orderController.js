@@ -501,15 +501,26 @@ const getTokens = async (req, res) => {
       since = (resetAt && resetAt > today) ? resetAt : today;
     }
 
-    const tokens = await (await Order(req)).find({
+    const clampLimit = (n) => Math.min(15, Math.max(1, n));
+    const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const limit = Number.isFinite(rawLimit) ? clampLimit(rawLimit) : null;
+    const rawPage = req.query.page ? parseInt(req.query.page, 10) : null;
+    const page = Number.isFinite(rawPage) ? Math.max(1, rawPage) : 1;
+    const skip = limit ? (page - 1) * limit : 0;
+
+    let query = (await Order(req)).find({
       isTakeawayOrder: true,
       tokenNumber: { $exists: true },
       createdAt: { $gte: since, $lt: new Date(today.getTime() + 86400000) },
       status: { $ne: "Cancelled" },
     })
       .select("table status totalAmount createdAt customerName items.name items.qty items.price items.image isTakeawayOrder tokenNumber")
-      .sort({ tokenNumber: -1 })
-      .lean();
+      .sort({ tokenNumber: -1 });
+
+    if (skip > 0) query = query.skip(skip);
+    if (limit) query = query.limit(limit);
+
+    const tokens = await query.lean();
 
     res.set('Cache-Control', 'private, max-age=8');
     res.json({ tokens, resetAt: since.toISOString() });
@@ -540,16 +551,22 @@ const getOrders = async (req, res) => {
       filter.createdAt = { $gte: startOfDay };
     }
 
-    // default to 50 if no limit provided
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
-    const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
+    // Pagination (optional). If a UI passes limit, clamp it to 1–15.
+    const clampLimit = (n) => Math.min(15, Math.max(1, n));
+    const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const limit = Number.isFinite(rawLimit) ? clampLimit(rawLimit) : 50;
+
+    const rawPage = req.query.page ? parseInt(req.query.page, 10) : null;
+    const page = Number.isFinite(rawPage) ? Math.max(1, rawPage) : null;
+    const rawSkip = req.query.skip ? parseInt(req.query.skip, 10) : null;
+    const skip = page ? (page - 1) * limit : (Number.isFinite(rawSkip) ? rawSkip : 0);
 
     // optimization: only fetch necessary fields for the order list
     const orders = await (await Order(req)).find(filter)
-      .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price items.image isTakeawayOrder tokenNumber')
+      .select('table status totalAmount createdAt customerName hasTakeaway deliveryTime items.name items.qty items.price items.image items.isTakeaway isTakeawayOrder tokenNumber')
       .sort({ createdAt: -1 })
       .skip(skip > 0 ? skip : 0)
-      .limit(limit > 200 ? 200 : limit)
+      .limit(limit)
       .lean();
 
     res.json(orders);

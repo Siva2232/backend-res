@@ -4,6 +4,7 @@ const User = require("../models/User");
 const SuperAdminNotification = require("../models/SuperAdminNotification");
 
 const { clearTenantCache } = require("../middleware/tenantMiddleware");
+const validator = require("validator");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: auto-generate next restaurantId (RESTO001, RESTO002 …)
@@ -452,6 +453,42 @@ const updateRestaurant = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update ownerEmail for own restaurant (Admin) or SuperAdmin
+// @route   PUT /api/restaurants/:restaurantId/owner-email
+// @access  Private (own restaurant) or SuperAdmin
+// ─────────────────────────────────────────────────────────────────────────────
+const updateOwnerEmail = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const ownerEmailRaw = String(req.body?.ownerEmail || "").trim();
+    if (!ownerEmailRaw) return res.status(400).json({ message: "ownerEmail is required" });
+    const ownerEmail = ownerEmailRaw.toLowerCase();
+    if (!validator.isEmail(ownerEmail)) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+
+    const restaurant = await Restaurant.findOne({ restaurantId });
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    restaurant.ownerEmail = ownerEmail;
+    await restaurant.save();
+    clearTenantCache(restaurant.restaurantId);
+
+    res.json({ message: "Owner email updated", ownerEmail: restaurant.ownerEmail });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Delete restaurant  (Super Admin)
 // @route   DELETE /api/restaurants/:restaurantId
 // @access  Private/SuperAdmin
@@ -646,6 +683,7 @@ module.exports = {
   getRestaurantFeatures,
   createRestaurant,
   updateRestaurant,
+  updateOwnerEmail,
   updateBranding,
   updateFeatures,
   assignPlan,

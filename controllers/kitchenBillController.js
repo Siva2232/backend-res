@@ -25,10 +25,13 @@ const getKitchenBills = async (req, res) => {
     // Sort by newest first
     query = query.sort({ createdAt: -1 });
     
-    // Limit results if specified
+    // Limit results if specified (UI pagination: clamp 1–15)
     if (req.query.limit) {
-      const limit = parseInt(req.query.limit, 10);
-      if (!isNaN(limit)) query = query.limit(limit);
+      const raw = parseInt(req.query.limit, 10);
+      if (!Number.isNaN(raw)) {
+        const limit = Math.min(15, Math.max(1, raw));
+        query = query.limit(limit);
+      }
     }
     
     query = query.select("-__v -items.image -items.product -items.addedAt -items.isNewItem");

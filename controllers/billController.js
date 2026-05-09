@@ -43,7 +43,9 @@ const getBills = async (req, res) => {
       filter.billedAt = { $gte: fromDate };
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 40, 100);
+    const clampLimit = (n) => Math.min(15, Math.max(1, n));
+    const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const limit = Number.isFinite(rawLimit) ? clampLimit(rawLimit) : 40;
 
     const query = { ...filter };
     if (!req.query.today && !req.query.from) {

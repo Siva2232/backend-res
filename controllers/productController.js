@@ -10,7 +10,7 @@ const getProducts = async (req, res) => {
 
   try {
     const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
-    const { category, isAvailable, limit, fields } = req.query;
+    const { category, isAvailable, limit, page, fields } = req.query;
     let queryObj = {};
 
     if (category) queryObj.category = category;
@@ -24,8 +24,13 @@ const getProducts = async (req, res) => {
     }
 
     if (limit) {
-      const limitVal = parseInt(limit, 10);
-      if (!isNaN(limitVal)) query = query.limit(limitVal);
+      const raw = parseInt(limit, 10);
+      if (!Number.isNaN(raw)) {
+        const limitVal = Math.min(15, Math.max(1, raw));
+        const pageRaw = page ? parseInt(page, 10) : 1;
+        const pageVal = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
+        query = query.skip((pageVal - 1) * limitVal).limit(limitVal);
+      }
     }
 
     // Sort by name or newest by default

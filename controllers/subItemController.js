@@ -11,7 +11,20 @@ const getSubItems = async (req, res) => {
     if (req.query.type) filter.type = req.query.type;
     if (req.query.category) filter.category = req.query.category;
 
-    const items = await SubItem.find(filter).sort({ type: 1, name: 1 });
+    let query = SubItem.find(filter).sort({ type: 1, name: 1 });
+
+    // Optional pagination for UI lists: ?page=&limit= (limit clamped 1–15)
+    if (req.query.limit) {
+      const raw = parseInt(req.query.limit, 10);
+      if (!Number.isNaN(raw)) {
+        const limit = Math.min(15, Math.max(1, raw));
+        const pageRaw = req.query.page ? parseInt(req.query.page, 10) : 1;
+        const page = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
+        query = query.skip((page - 1) * limit).limit(limit);
+      }
+    }
+
+    const items = await query;
     res.json(items);
   } catch (err) {
     res.status(500).json({ message: err.message });
