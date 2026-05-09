@@ -67,6 +67,14 @@ const restaurantSchema = new mongoose.Schema(
     address:     { type: String, default: "" },
     isActive:    { type: Boolean, default: true },
 
+    /** Printed receipt / bill header (admin-managed; synced from Admin Profile) */
+    receiptHeader: {
+      restaurantName: { type: String, default: "" },
+      address:          { type: String, default: "" },
+      phone:            { type: String, default: "" },
+      gstNumber:        { type: String, default: "" },
+    },
+
     // Expiry reminder tracking (so we don't spam)
     reminderSent3Days:  { type: Boolean, default: false },
     reminderSent1Day:   { type: Boolean, default: false },

@@ -59,7 +59,7 @@ const getRestaurantBranding = async (req, res) => {
   try {
     const restaurant = await Restaurant.findOne(
       { restaurantId: req.params.restaurantId.toUpperCase() },
-      "restaurantId name logo primaryColor secondaryColor accentColor sidebarBgColor sidebarTextColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry"
+      "restaurantId name logo primaryColor secondaryColor accentColor sidebarBgColor sidebarTextColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry receiptHeader"
     ).populate("subscriptionPlan", "name price duration features");
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
@@ -78,6 +78,12 @@ const getRestaurantBranding = async (req, res) => {
       subscriptionPlan:   restaurant.subscriptionPlan   || null,
       subscriptionStatus: restaurant.subscriptionStatus || "trial",
       subscriptionExpiry: restaurant.subscriptionExpiry || null,
+      receiptHeader: {
+        restaurantName: restaurant.receiptHeader?.restaurantName || "",
+        address: restaurant.receiptHeader?.address || "",
+        phone: restaurant.receiptHeader?.phone || "",
+        gstNumber: restaurant.receiptHeader?.gstNumber || "",
+      },
     };
 
     // Only include feature flags when the request carries a valid auth token
@@ -489,6 +495,58 @@ const updateOwnerEmail = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update printed receipt header for own restaurant (Admin) or SuperAdmin
+// @route   PUT /api/restaurants/:restaurantId/receipt-header
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const updateReceiptHeader = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const { restaurantName, address, phone, gstNumber } = req.body;
+    const restaurant = await Restaurant.findOne({ restaurantId });
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    if (!restaurant.receiptHeader) restaurant.receiptHeader = {};
+
+    if (restaurantName !== undefined) {
+      restaurant.receiptHeader.restaurantName = String(restaurantName).trim();
+    }
+    if (address !== undefined) {
+      restaurant.receiptHeader.address = String(address).trim();
+    }
+    if (phone !== undefined) {
+      restaurant.receiptHeader.phone = String(phone).trim();
+    }
+    if (gstNumber !== undefined) {
+      restaurant.receiptHeader.gstNumber = String(gstNumber).trim().toUpperCase();
+    }
+
+    await restaurant.save();
+    clearTenantCache(restaurant.restaurantId);
+
+    res.json({
+      message: "Receipt header updated",
+      receiptHeader: {
+        restaurantName: restaurant.receiptHeader.restaurantName || "",
+        address: restaurant.receiptHeader.address || "",
+        phone: restaurant.receiptHeader.phone || "",
+        gstNumber: restaurant.receiptHeader.gstNumber || "",
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Delete restaurant  (Super Admin)
 // @route   DELETE /api/restaurants/:restaurantId
 // @access  Private/SuperAdmin
@@ -684,6 +742,7 @@ module.exports = {
   createRestaurant,
   updateRestaurant,
   updateOwnerEmail,
+  updateReceiptHeader,
   updateBranding,
   updateFeatures,
   assignPlan,
