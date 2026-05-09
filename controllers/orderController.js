@@ -272,7 +272,7 @@ const addOrderItems = async (req, res) => {
     paymentMethod: paymentMethod || "cod",
     paymentStatus: paymentStatus || "pending",
     paymentId: paymentId || null,
-    status: status || "Pending",
+    status: status || "New",
     customerName,
     customerAddress,
     deliveryTime,

@@ -46,7 +46,7 @@ const orderSchema = mongoose.Schema(
         "Paid",
         "Cancelled",
       ],
-      default: "Pending",
+      default: "New",
     },
     // which waiter took the order (optional)
     waiter: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
