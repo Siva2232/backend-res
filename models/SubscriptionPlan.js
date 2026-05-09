@@ -21,6 +21,7 @@ const subscriptionPlanSchema = new mongoose.Schema(
       hrStaff:         { type: Boolean, default: true },
       hrAttendance:    { type: Boolean, default: true },
       hrLeaves:        { type: Boolean, default: true },
+      reservations:    { type: Boolean, default: true },
     },
 
     // Soft limits

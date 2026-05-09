@@ -42,6 +42,8 @@ const restaurantSchema = new mongoose.Schema(
       hrStaff:         { type: Boolean, default: true },
       hrAttendance:    { type: Boolean, default: true },
       hrLeaves:        { type: Boolean, default: true },
+      /** Table reservations (admin UI, floor dots, customer table gate) */
+      reservations:    { type: Boolean, default: true },
     },
 
     // Subscription

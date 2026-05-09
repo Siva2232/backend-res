@@ -22,6 +22,7 @@ const subItemRoutes = require("./routes/subItemRoutes");
 const tableRoutes = require("./routes/tableRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const reservationRoutes = require("./routes/reservationRoutes");
+const reservationsFeatureMiddleware = require("./middleware/reservationsFeatureMiddleware");
 const hrStaffRoutes = require("./routes/hrStaffRoutes");
 const hrAttendanceRoutes = require("./routes/hrAttendanceRoutes");
 const hrLeaveRoutes = require("./routes/hrLeaveRoutes");
@@ -226,7 +227,7 @@ app.use("/api/payments", tenantMiddleware, paymentRoutes);
 app.use("/api/sub-items", tenantMiddleware, subItemRoutes);
 app.use("/api/tables", tenantMiddleware, tableRoutes);
 app.use("/api/notifications", tenantMiddleware, notificationRoutes);
-app.use("/api/reservations", tenantMiddleware, reservationRoutes);
+app.use("/api/reservations", tenantMiddleware, reservationsFeatureMiddleware, reservationRoutes);
 
 // ─── Non-tenant routes (platform-level) ──────────────────────────────────
 // Auth uses the shared User collection (no per-restaurant DB needed)

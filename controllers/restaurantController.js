@@ -108,19 +108,22 @@ const getRestaurantBranding = async (req, res) => {
           hrStaff:      restaurant.features?.hrStaff ?? true,
           hrAttendance: restaurant.features?.hrAttendance ?? true,
           hrLeaves:     restaurant.features?.hrLeaves ?? true,
+          reservations: restaurant.features?.reservations !== false,
         };
       } catch (_) {
         // invalid/expired token — treat as public request
         response.features = {
           qrMenu: restaurant.features?.qrMenu ?? false,
-          onlineOrders: restaurant.features?.onlineOrders ?? false
+          onlineOrders: restaurant.features?.onlineOrders ?? false,
+          reservations: restaurant.features?.reservations !== false,
         };
       }
     } else {
       // Public guest - only expose essential flags
       response.features = {
         qrMenu: restaurant.features?.qrMenu ?? false,
-        onlineOrders: restaurant.features?.onlineOrders ?? false
+        onlineOrders: restaurant.features?.onlineOrders ?? false,
+        reservations: restaurant.features?.reservations !== false,
       };
     }
 
@@ -342,6 +345,7 @@ const updateFeatures = async (req, res) => {
       "hrStaff",
       "hrAttendance",
       "hrLeaves",
+      "reservations",
     ];
     for (const key of allowed) {
       if (incoming && incoming[key] !== undefined) {
@@ -393,6 +397,7 @@ const assignPlan = async (req, res) => {
       "hrStaff",
       "hrAttendance",
       "hrLeaves",
+      "reservations",
     ];
     for (const key of allowedFeatures) {
       if (planFeatures[key]) restaurant.features[key] = true;
@@ -591,6 +596,9 @@ const getAnalytics = async (req, res) => {
       qrMenu:       await Restaurant.countDocuments({ "features.qrMenu":       true }),
       kitchenPanel: await Restaurant.countDocuments({ "features.kitchenPanel": true }),
       waiterPanel:  await Restaurant.countDocuments({ "features.waiterPanel":  true }),
+      reservations: await Restaurant.countDocuments({
+        $or: [{ "features.reservations": true }, { "features.reservations": { $exists: false } }],
+      }),
     };
 
     // Build a rolling 6-month timeline for charting
