@@ -1,4 +1,6 @@
 const SubscriptionPlan = require("../../models/SubscriptionPlan");
+const Restaurant = require("../../models/Restaurant");
+const { clearTenantCache } = require("../../middleware/tenantMiddleware");
 
 const normalizeDurationDays = (duration) => {
   const raw = duration !== undefined && duration !== null ? Number(duration) : 30;
@@ -60,6 +62,14 @@ const updatePlan = async (req, res) => {
     }
     const plan = await SubscriptionPlan.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
     if (!plan) return res.status(404).json({ message: "Plan not found" });
+    // Bust tenant cache for restaurants on this plan so limits/features reflect immediately.
+    // tenantMiddleware caches populated subscriptionPlan for ~60s by default.
+    try {
+      const restaurants = await Restaurant.find({ subscriptionPlan: plan._id }).select("restaurantId").lean();
+      for (const r of restaurants) {
+        if (r?.restaurantId) clearTenantCache(r.restaurantId);
+      }
+    } catch (_) {}
     res.json(plan);
   } catch (err) {
     res.status(500).json({ message: err.message });

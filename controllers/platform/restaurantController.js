@@ -135,6 +135,17 @@ const getRestaurantBranding = async (req, res) => {
       },
     };
 
+    const planFeatures =
+      restaurant.subscriptionPlan && typeof restaurant.subscriptionPlan === "object"
+        ? restaurant.subscriptionPlan.features
+        : null;
+
+    const getEffectiveFeature = (key, fallback = false) => {
+      if (planFeatures && typeof planFeatures[key] === "boolean") return planFeatures[key];
+      if (restaurant.features && typeof restaurant.features[key] === "boolean") return restaurant.features[key];
+      return fallback;
+    };
+
     // Only include feature flags when the request carries a valid auth token
     // (admin/kitchen/waiter panels need these for navigation gating)
     // For customers, we ONLY expose public flags like qrMenu/onlineOrders
@@ -144,35 +155,35 @@ const getRestaurantBranding = async (req, res) => {
       try {
         jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
         response.features = {
-          hr:           restaurant.features?.hr ?? false,
-          // inventory:    restaurant.features?.inventory ?? false,
-          reports:      restaurant.features?.reports ?? false,
-          qrMenu:       restaurant.features?.qrMenu ?? false,
-          onlineOrders: restaurant.features?.onlineOrders ?? false,
-          kitchenPanel: restaurant.features?.kitchenPanel ?? false,
-          waiterPanel:  restaurant.features?.waiterPanel ?? false,
-          waiterCall:   restaurant.features?.waiterCall ?? false,
-          billRequest:  restaurant.features?.billRequest ?? false,
-          accounting:   restaurant.features?.accounting ?? true,
-          hrStaff:      restaurant.features?.hrStaff ?? true,
-          hrAttendance: restaurant.features?.hrAttendance ?? true,
-          hrLeaves:     restaurant.features?.hrLeaves ?? true,
-          reservations: restaurant.features?.reservations !== false,
+          hr:           getEffectiveFeature("hr", false),
+          // inventory:    getEffectiveFeature("inventory", false),
+          reports:      getEffectiveFeature("reports", false),
+          qrMenu:       getEffectiveFeature("qrMenu", false),
+          onlineOrders: getEffectiveFeature("onlineOrders", false),
+          kitchenPanel: getEffectiveFeature("kitchenPanel", false),
+          waiterPanel:  getEffectiveFeature("waiterPanel", false),
+          waiterCall:   getEffectiveFeature("waiterCall", true),
+          billRequest:  getEffectiveFeature("billRequest", true),
+          accounting:   getEffectiveFeature("accounting", true),
+          hrStaff:      getEffectiveFeature("hrStaff", true),
+          hrAttendance: getEffectiveFeature("hrAttendance", true),
+          hrLeaves:     getEffectiveFeature("hrLeaves", true),
+          reservations: getEffectiveFeature("reservations", true),
         };
       } catch (_) {
         // invalid/expired token — treat as public request
         response.features = {
-          qrMenu: restaurant.features?.qrMenu ?? false,
-          onlineOrders: restaurant.features?.onlineOrders ?? false,
-          reservations: restaurant.features?.reservations !== false,
+          qrMenu: getEffectiveFeature("qrMenu", false),
+          onlineOrders: getEffectiveFeature("onlineOrders", false),
+          reservations: getEffectiveFeature("reservations", true),
         };
       }
     } else {
       // Public guest - only expose essential flags
       response.features = {
-        qrMenu: restaurant.features?.qrMenu ?? false,
-        onlineOrders: restaurant.features?.onlineOrders ?? false,
-        reservations: restaurant.features?.reservations !== false,
+        qrMenu: getEffectiveFeature("qrMenu", false),
+        onlineOrders: getEffectiveFeature("onlineOrders", false),
+        reservations: getEffectiveFeature("reservations", true),
       };
     }
 
@@ -835,6 +846,79 @@ const recordSubscriptionPayment = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Renew current subscription (no plan change)
+// @route   POST /api/restaurants/:restaurantId/renew
+// @access  Private (Restaurant Admin / Super Admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const renewSubscription = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const force = Boolean(req.body?.force);
+
+    const restaurant = await Restaurant.findOne({ restaurantId }).populate("subscriptionPlan");
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+    if (!restaurant.subscriptionPlan) {
+      return res.status(400).json({ message: "No subscription plan assigned" });
+    }
+
+    const plan =
+      typeof restaurant.subscriptionPlan === "object" && restaurant.subscriptionPlan._id
+        ? restaurant.subscriptionPlan
+        : await SubscriptionPlan.findById(restaurant.subscriptionPlan);
+    if (!plan) return res.status(404).json({ message: "Invalid subscription plan" });
+
+    const now = new Date();
+    const exp = restaurant.subscriptionExpiry ? new Date(restaurant.subscriptionExpiry) : null;
+    const msLeft = exp ? exp.getTime() - now.getTime() : null;
+    const daysLeft = msLeft != null ? Math.ceil(msLeft / 86400000) : null;
+
+    // Restaurant admins can only renew within the last 5 days (or after expiry).
+    // Super admins can bypass this with { force: true } if needed.
+    if (!isSuperAdmin && daysLeft != null && daysLeft > 5) {
+      return res.status(400).json({ message: "Renewal is available in the last 5 days before expiry." });
+    }
+    if (isSuperAdmin && !force && daysLeft != null && daysLeft > 5) {
+      return res.status(400).json({ message: "Renewal is available in the last 5 days before expiry. (Send force=true to override.)" });
+    }
+
+    let newExpiry = now;
+    if (
+      restaurant.subscriptionExpiry &&
+      restaurant.subscriptionExpiry > now &&
+      (restaurant.subscriptionStatus === "active" || restaurant.subscriptionStatus === "trial")
+    ) {
+      newExpiry = new Date(restaurant.subscriptionExpiry);
+    }
+    newExpiry.setDate(newExpiry.getDate() + getPlanDurationDays(plan));
+
+    restaurant.subscriptionPlan = plan._id;
+    restaurant.subscriptionExpiry = newExpiry;
+    if (restaurant.subscriptionStatus !== "suspended") {
+      restaurant.subscriptionStatus = "active";
+    }
+    await restaurant.save();
+    clearTenantCache(restaurant.restaurantId);
+
+    res.json({
+      message: "Renewed successfully",
+      expiry: newExpiry,
+      daysAdded: getPlanDurationDays(plan),
+    });
+  } catch (err) {
+    console.error("[renewSubscription]", err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getRestaurants,
   getRestaurantById,
@@ -848,6 +932,7 @@ module.exports = {
   updateFeatures,
   assignPlan,
   recordSubscriptionPayment,
+  renewSubscription,
   deleteRestaurant,
   getAnalytics,
 };

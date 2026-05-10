@@ -15,6 +15,7 @@ const {
   updateFeatures,
   assignPlan,
   recordSubscriptionPayment,
+  renewSubscription,
   deleteRestaurant,
   getAnalytics,
 } = require("../../controllers/restaurantController");
@@ -30,6 +31,7 @@ router.get("/:restaurantId/features", protect, getRestaurantFeatures); // any ad
 router.put("/:restaurantId/features", protect, superAdminOnly, updateFeatures);
 router.put("/:restaurantId/plan",     protect, superAdminOnly, assignPlan);
 router.post("/:restaurantId/subscription-payment", protect, recordSubscriptionPayment);
+router.post("/:restaurantId/renew", protect, renewSubscription);
 router.put("/:restaurantId/branding", protect, updateBranding);
 router.put("/:restaurantId/owner-email", protect, updateOwnerEmail);
 router.put("/:restaurantId/receipt-header", protect, updateReceiptHeader);
