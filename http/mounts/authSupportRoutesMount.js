@@ -1,5 +1,5 @@
-const authRoutes = require("../../../routes/authRoutes");
-const supportTicketRoutes = require("../../../routes/supportTicketRoutes");
+const authRoutes = require("../../routes/authRoutes");
+const supportTicketRoutes = require("../../routes/supportTicketRoutes");
 
 function mountAuthAndSupportRoutes(app) {
   app.use("/api/auth", authRoutes);

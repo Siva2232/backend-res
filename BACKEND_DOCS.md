@@ -48,7 +48,7 @@ const products = await Product.find();
 - Throws an error if `restaurantId` is missing — **prevents silent leaks**.
 
 #### 3. Tenant Middleware (`middleware/tenantMiddleware.js`)
-Applied to tenant-scoped routers mounted from **`src/http/mounts/`** (see `catalogRoutes.js`, `operationsRoutes.js`, `reservationRoutesMount.js`, `hrRoutesMount.js`). Platform routes (`/api/restaurants`, `/api/plans`, `/api/superadmin`, `/api/auth`, `/api/accounting`, etc.) mount **without** this middleware at the router level — see `platformRoutesMount.js` and `authSupportRoutesMount.js`.
+Applied to tenant-scoped routers mounted from **`http/mounts/`** (see `catalogRoutes.js`, `operationsRoutes.js`, `reservationRoutesMount.js`, `hrRoutesMount.js`). Platform routes (`/api/restaurants`, `/api/plans`, `/api/superadmin`, `/api/auth`, `/api/accounting`, etc.) mount **without** this middleware at the router level — see `platformRoutesMount.js` and `authSupportRoutesMount.js`.
 
 What it does:
 1. Extracts `restaurantId` from: `req.restaurantId` → `req.user.restaurantId` → `?restaurantId=` query → `X-Restaurant-Id` header
@@ -61,8 +61,8 @@ What it does:
 - Overrides `req.restaurantId` with the JWT-embedded value (authoritative — can't be spoofed)
 - Role checks: `admin`, `adminOrKitchen`, `adminOrKitchenOrWaiter`
 
-#### 5. Global restaurantId extraction (`src/middleware/restaurantContext.js`)
-Registered from **`src/http/applyGlobalMiddleware.js`** before routes. Sets `req.restaurantId` from query, `X-Restaurant-Id`, or a non-throwing JWT decode (invalid tokens are ignored).
+#### 5. Global restaurantId extraction (`middleware/restaurantContext.js`)
+Registered from **`http/applyGlobalMiddleware.js`** before routes. Sets `req.restaurantId` from query, `X-Restaurant-Id`, or a non-throwing JWT decode (invalid tokens are ignored).
 
 ### Cross-Tenant Security
 ```
@@ -85,9 +85,9 @@ Registered from **`src/http/applyGlobalMiddleware.js`** before routes. Sets `req
 ```
 backend-res/
 ├── server.js                   # Process entry: DB, HTTP listen, cron, shutdown
-├── src/createApp.js            # Thin Express composer
-├── src/http/                   # Middleware + grouped route mounts (`mounts/`)
-├── src/attachSocket.js         # Socket.IO (rooms, ordersSnapshot)
+├── createApp.js                # Thin Express composer
+├── http/                       # Middleware + grouped route mounts (`mounts/`)
+├── attachSocket.js             # Socket.IO (rooms, ordersSnapshot)
 ├── config/
 │   └── db.js                   # MongoDB connection (platform DB)
 ├── controllers/                # Root `*Controller.js` files are thin re-exports (stable route imports)
@@ -265,7 +265,7 @@ Standard CRUD endpoints. All require `restaurantId` via middleware.
 - All server emissions use `io.to(restaurantId).emit()` — **never** global `io.emit()`.
 - Staff clients send their JWT token during `joinRoom` for authentication.
 
-### Server-Side (in `src/attachSocket.js`; HTTP API composed in `src/http/`)
+### Server-Side (in `attachSocket.js`; HTTP API composed in `http/`)
 ```js
 socket.on('joinRoom', async ({ restaurantId, token }) => {
   socket.join(restaurantId);
@@ -293,7 +293,7 @@ socket.on('joinRoom', async ({ restaurantId, token }) => {
 | `newNotification` | notificationRoutes | Alert for admin |
 | `newReservation` | reservationRoutes | New table reservation |
 | `attendanceUpdate` | hrAttendanceController | Attendance check-in/out |
-| `ordersSnapshot` | src/attachSocket.js (joinRoom) | Initial orders state for staff |
+| `ordersSnapshot` | attachSocket.js (joinRoom) | Initial orders state for staff |
 
 ---
 

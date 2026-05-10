@@ -1,4 +1,4 @@
-const { notFound, errorHandler } = require("../../middleware/errorMiddleware");
+const { notFound, errorHandler } = require("../middleware/errorMiddleware");
 
 function applyErrorHandlers(app) {
   app.use(notFound);

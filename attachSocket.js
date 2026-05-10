@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const User = require("./models/User");
 
 /**
  * Attach Socket.IO to the HTTP server and expose via app.set('io', io).
@@ -50,8 +50,8 @@ function attachSocketIO(server, app) {
           ["admin", "kitchen", "waiter"].includes(staffUser.role);
         if (!isStaff) return;
 
-        const OrderModel = require("../models/Order");
-        const { getModel } = require("../utils/getModel");
+        const OrderModel = require("./models/Order");
+        const { getModel } = require("./utils/getModel");
         const Order = await getModel("Order", OrderModel.schema, rid);
         const orders = await Order.find(
           { status: { $in: ["Pending", "New", "Preparing", "Ready", "Served"] } },

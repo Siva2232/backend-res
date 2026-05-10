@@ -1,10 +1,10 @@
-const orderRoutes = require("../../../routes/orderRoutes");
-const billRoutes = require("../../../routes/billRoutes");
-const kitchenBillRoutes = require("../../../routes/kitchenBillRoutes");
-const tableRoutes = require("../../../routes/tableRoutes");
-const notificationRoutes = require("../../../routes/notificationRoutes");
-const paymentRoutes = require("../../../routes/paymentRoutes");
-const { tenantMiddleware } = require("../../../middleware/tenantMiddleware");
+const orderRoutes = require("../../routes/orderRoutes");
+const billRoutes = require("../../routes/billRoutes");
+const kitchenBillRoutes = require("../../routes/kitchenBillRoutes");
+const tableRoutes = require("../../routes/tableRoutes");
+const notificationRoutes = require("../../routes/notificationRoutes");
+const paymentRoutes = require("../../routes/paymentRoutes");
+const { tenantMiddleware } = require("../../middleware/tenantMiddleware");
 
 function mountOperationsRoutes(app) {
   app.use("/api/orders", tenantMiddleware, orderRoutes);

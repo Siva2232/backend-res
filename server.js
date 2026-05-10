@@ -1,6 +1,6 @@
 /**
  * Process entrypoint — keeps DNS + dotenv at top; delegates HTTP/Socket bootstrap after Mongo connects.
- * Express routes & middleware live in src/createApp.js (easier to test and deploy behind proxies).
+ * Express routes & middleware live in createApp.js (easier to test and deploy behind proxies).
  */
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
@@ -12,9 +12,9 @@ const fs = require("fs");
 const path = require("path");
 
 const connectDB = require("./config/db");
-const { validateProductionEnv } = require("./src/config/env");
-const { createApp } = require("./src/createApp");
-const { attachSocketIO } = require("./src/attachSocket");
+const { validateProductionEnv } = require("./config/env");
+const { createApp } = require("./createApp");
+const { attachSocketIO } = require("./attachSocket");
 
 validateProductionEnv();
 
