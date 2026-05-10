@@ -1,0 +1,56 @@
+const BannerModel = require("../../../models/Banner");
+const { getModel } = require("../../../utils/getModel");
+
+const getBanners = async (req, res) => {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
+  const banners = await Banner.find({}).select('title description imageUrl tag').lean();
+  res.json(banners);
+};
+
+const createBanner = async (req, res) => {
+  try {
+    const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
+    const { title, description, imageUrl, tag } = req.body;
+    
+    if (!title || !description || !imageUrl) {
+      return res.status(400).json({ message: "Missing required fields: title, description, and imageUrl are strictly required." });
+    }
+
+    const banner = new Banner({ title, description, imageUrl, tag });
+    const createdBanner = await banner.save();
+    res.status(201).json(createdBanner);
+  } catch (error) {
+    console.error("Create banner error:", error);
+    res.status(500).json({ message: error.message || "Failed to create banner" });
+  }
+};
+
+const updateBanner = async (req, res) => {
+  const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
+  const { title, description, imageUrl, tag } = req.body;
+  const banner = await Banner.findById(req.params.id);
+  if (banner) {
+    banner.title = title || banner.title;
+    banner.description = description || banner.description;
+    banner.imageUrl = imageUrl || banner.imageUrl;
+    banner.tag = tag || banner.tag;
+    const updatedBanner = await banner.save();
+    res.json(updatedBanner);
+  } else {
+    res.status(404).json({ message: "Banner not found" });
+  }
+};
+
+const deleteBanner = async (req, res) => {
+  const Banner = await getModel("Banner", BannerModel.schema, req.restaurantId);
+  const banner = await Banner.findById(req.params.id);
+  if (banner) {
+    await banner.deleteOne();
+    res.json({ message: "Banner removed" });
+  } else {
+    res.status(404).json({ message: "Banner not found" });
+  }
+};
+
+module.exports = { getBanners, createBanner, updateBanner, deleteBanner };

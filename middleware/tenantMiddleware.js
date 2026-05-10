@@ -2,8 +2,14 @@ const Restaurant = require("../models/Restaurant");
 
 // In-memory cache for validated restaurants (avoids DB hit on every request).
 // Entries expire after 60 seconds so subscription/status changes propagate quickly.
+// Size is capped so many restaurant IDs cannot exhaust heap memory.
 const _cache = new Map();
 const CACHE_TTL = 60_000; // 60 seconds
+
+function maxTenantLookupCache() {
+  const n = parseInt(process.env.TENANT_LOOKUP_CACHE_MAX || "400", 10);
+  return Number.isFinite(n) && n >= 50 ? n : 400;
+}
 
 function _getCached(rid) {
   const entry = _cache.get(rid);
@@ -16,6 +22,18 @@ function _getCached(rid) {
 }
 
 function _setCache(rid, doc) {
+  const max = maxTenantLookupCache();
+  if (_cache.size >= max && !_cache.has(rid)) {
+    let oldestKey = null;
+    let oldestTs = Infinity;
+    for (const [k, v] of _cache.entries()) {
+      if (v.ts < oldestTs) {
+        oldestTs = v.ts;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) _cache.delete(oldestKey);
+  }
   _cache.set(rid, { doc, ts: Date.now() });
 }
 

@@ -26,16 +26,17 @@ Tenant DB:    aktech_RESTO002  → Products, Orders, Bills, Tables, HR, Accounti
 
 ### How It Works
 
-#### 1. Connection Manager (`utils/dbConnection.js`)
-- Maintains a **pool** of up to 100 active Mongoose connections.
-- Each restaurant gets a connection to `aktech_<RESTAURANT_ID>`.
-- Connections are cached and reused; idle ones are evicted.
+#### 1. Connection Manager (`utils/database/dbConnection.js` — import via `utils/dbConnection.js` stub)
+- Caches one Mongoose **connection per tenant** database (`aktech_<RESTAURANT_ID>`), bounded by **`TENANT_DB_MAX_CONNECTIONS`** (default **128**).
+- When the cache is full, the **least recently used** tenant connection is closed and removed — **not** arbitrary insertion order (important when many restaurants are active).
+- Per-tenant driver pool size: **`TENANT_DB_POOL_MAX`** (default **5**). Tune both env vars if you run many concurrent tenants on one API instance.
+- **`getTenantConnectionStats()`** can be used for monitoring (counts only; safe for dashboards).
 ```js
 const conn = await getConnection('RESTO001');
 // → mongoose.Connection bound to mongodb://…/aktech_RESTO001
 ```
 
-#### 2. Dynamic Model Registry (`utils/getModel.js`)
+#### 2. Dynamic Model Registry (`utils/database/getModel.js` — import via `utils/getModel.js` stub)
 - **Every** tenant-scoped query goes through `getModel()`. This is the single most critical function.
 - Returns a Mongoose model bound to the restaurant's own database.
 ```js
@@ -47,23 +48,7 @@ const products = await Product.find();
 - Throws an error if `restaurantId` is missing — **prevents silent leaks**.
 
 #### 3. Tenant Middleware (`middleware/tenantMiddleware.js`)
-Applied to **all** data routes in `server.js`:
-```js
-app.use("/api/products",       tenantMiddleware, productRoutes);
-app.use("/api/orders",         tenantMiddleware, orderRoutes);
-app.use("/api/bills",          tenantMiddleware, billRoutes);
-app.use("/api/kitchen-bills",  tenantMiddleware, kitchenBillRoutes);
-app.use("/api/banners",        tenantMiddleware, bannerRoutes);
-app.use("/api/offers",         tenantMiddleware, offerRoutes);
-app.use("/api/categories",     tenantMiddleware, categoryRoutes);
-app.use("/api/tables",         tenantMiddleware, tableRoutes);
-app.use("/api/notifications",  tenantMiddleware, notificationRoutes);
-app.use("/api/reservations",   tenantMiddleware, reservationRoutes);
-app.use("/api/sub-items",      tenantMiddleware, subItemRoutes);
-app.use("/api/payment",        tenantMiddleware, paymentRoutes);
-app.use("/api/hr/*",           tenantMiddleware, ...hrRoutes);
-app.use("/api/acc",            tenantMiddleware, accRoutes);
-```
+Applied to tenant-scoped routers mounted from **`src/http/mounts/`** (see `catalogRoutes.js`, `operationsRoutes.js`, `reservationRoutesMount.js`, `hrRoutesMount.js`). Platform routes (`/api/restaurants`, `/api/plans`, `/api/superadmin`, `/api/auth`, `/api/accounting`, etc.) mount **without** this middleware at the router level — see `platformRoutesMount.js` and `authSupportRoutesMount.js`.
 
 What it does:
 1. Extracts `restaurantId` from: `req.restaurantId` → `req.user.restaurantId` → `?restaurantId=` query → `X-Restaurant-Id` header
@@ -76,15 +61,8 @@ What it does:
 - Overrides `req.restaurantId` with the JWT-embedded value (authoritative — can't be spoofed)
 - Role checks: `admin`, `adminOrKitchen`, `adminOrKitchenOrWaiter`
 
-#### 5. Global restaurantId Extraction (in `server.js`)
-Before any route handler runs:
-```js
-app.use((req, res, next) => {
-  // 1. From query param or X-Restaurant-Id header
-  // 2. Fallback: decode JWT to extract restaurantId
-  next();
-});
-```
+#### 5. Global restaurantId extraction (`src/middleware/restaurantContext.js`)
+Registered from **`src/http/applyGlobalMiddleware.js`** before routes. Sets `req.restaurantId` from query, `X-Restaurant-Id`, or a non-throwing JWT decode (invalid tokens are ignored).
 
 ### Cross-Tenant Security
 ```
@@ -106,84 +84,43 @@ app.use((req, res, next) => {
 ## Project Structure
 ```
 backend-res/
-├── server.js                   # Express app, HTTP server, Socket.io, route mounting
+├── server.js                   # Process entry: DB, HTTP listen, cron, shutdown
+├── src/createApp.js            # Thin Express composer
+├── src/http/                   # Middleware + grouped route mounts (`mounts/`)
+├── src/attachSocket.js         # Socket.IO (rooms, ordersSnapshot)
 ├── config/
 │   └── db.js                   # MongoDB connection (platform DB)
-├── controllers/
-│   ├── authController.js       # Login, register, user CRUD (platform User model)
-│   ├── productController.js    # Menu items CRUD
-│   ├── orderController.js      # Order creation, status updates, token management
-│   ├── billController.js       # Bill generation, payment tracking
-│   ├── kitchenBillController.js # Kitchen display orders
-│   ├── categoryController.js   # Product categories
-│   ├── subItemController.js    # Add-ons / toppings
-│   ├── tableController.js      # Table management
-│   ├── bannerController.js     # Promotional banners
-│   ├── offerController.js      # Offer/deal management
-│   ├── restaurantController.js # Restaurant CRUD + branding (Super Admin)
-│   ├── subscriptionPlanController.js # Plan management (Super Admin)
-│   ├── superAdminController.js # Super Admin auth
-│   ├── hrStaffController.js    # HR staff profiles
-│   ├── hrAttendanceController.js # Attendance (selfie + GPS)
-│   ├── hrLeaveController.js    # Leave requests
-│   ├── hrShiftController.js    # Shift scheduling
-│   ├── hrPayrollController.js  # Payroll generation
-│   ├── accAccountController.js # Chart of Accounts
-│   ├── accExpenseController.js # Expenses
-│   ├── accLedgerController.js  # Ledger entries
-│   ├── accLoanController.js    # Loans
-│   ├── accOrderController.js   # Accounting orders
-│   ├── accPartyController.js   # Parties (vendors/customers)
-│   ├── accPaymentController.js # Payments
-│   ├── accPurchaseController.js # Purchase orders
-│   └── accReportController.js  # Financial reports
+├── controllers/                # Root `*Controller.js` files are thin re-exports (stable route imports)
+│   ├── platform/             # Main DB: auth, superAdmin, restaurant, subscriptionPlan, supportTicket, saNotification
+│   └── tenant/               # Tenant DB logic (mirrors `models/tenant/`)
+│       ├── menu/             # product, category, subItem, banner, offer
+│       ├── orders/           # order, bill, kitchenBill
+│       ├── ops/              # table
+│       ├── hr/               # hrStaff, attendance, leave, shift, payroll
+│       └── accounting/       # accAccount (ledger + transactions)
 ├── middleware/
 │   ├── authMiddleware.js       # JWT verification, role checks
 │   ├── tenantMiddleware.js     # Restaurant validation + cross-tenant blocking
 │   ├── featureMiddleware.js    # Feature flag enforcement (hr, accounting, etc.)
 │   ├── hrAuthMiddleware.js     # HR-specific auth
 │   └── errorMiddleware.js      # 404 + error handler
-├── models/
-│   ├── User.js                 # [PLATFORM] All staff accounts
-│   ├── Restaurant.js           # [PLATFORM] Restaurant config + branding
-│   ├── SubscriptionPlan.js     # [PLATFORM] SaaS plans
-│   ├── SuperAdmin.js           # [PLATFORM] Super Admin accounts
-│   ├── Product.js              # [TENANT] Menu items
-│   ├── Order.js                # [TENANT] Customer orders
-│   ├── Bill.js                 # [TENANT] Invoices
-│   ├── KitchenBill.js          # [TENANT] Kitchen display tickets
-│   ├── Category.js             # [TENANT] Product categories
-│   ├── SubItem.js              # [TENANT] Add-ons
-│   ├── Table.js                # [TENANT] Restaurant tables
-│   ├── Banner.js               # [TENANT] Promo banners
-│   ├── Offer.js                # [TENANT] Deals/offers
-│   ├── Settings.js             # [TENANT] Restaurant settings
-│   ├── Notification.js         # [TENANT] Real-time alerts
-│   ├── Reservation.js          # [TENANT] Table reservations
-│   ├── HRStaff.js              # [TENANT] Employee profiles
-│   ├── HRAttendance.js         # [TENANT] Attendance logs
-│   ├── HRLeave.js              # [TENANT] Leave records
-│   ├── HRShift.js              # [TENANT] Shift definitions
-│   ├── HRPayroll.js            # [TENANT] Payroll records
-│   ├── AccAccount.js           # [TENANT] Chart of Accounts
-│   ├── AccExpense.js           # [TENANT] Expenses
-│   ├── AccLedgerEntry.js       # [TENANT] Double-entry ledger
-│   ├── AccLoan.js              # [TENANT] Loans
-│   ├── AccOrder.js             # [TENANT] Accounting orders
-│   ├── AccParty.js             # [TENANT] Vendors/customers
-│   ├── AccPayment.js           # [TENANT] Payment records
-│   └── AccPurchase.js          # [TENANT] Purchase orders
-├── routes/                     # Express routers (one per module)
-├── services/
-│   ├── cronService.js          # Scheduled jobs (subscription expiry, HR automation)
-│   ├── emailService.js         # Nodemailer transactional emails
-│   └── payslipService.js       # PDF payslip generation
-├── utils/
-│   ├── dbConnection.js         # Per-restaurant DB connection pool
-│   ├── getModel.js             # Dynamic model registry (THE core multi-tenant function)
-│   ├── accSeeder.js            # Chart of Accounts seeder
-│   ├── accLedgerUtils.js       # Ledger double-entry helpers
-│   └── socketUtils.js          # Room-scoped Socket.io emit helper
+├── models/                     # Root `*.js` files are thin re-exports (backward-compatible imports)
+│   ├── platform/               # [PLATFORM] Main DB — User, Restaurant, SubscriptionPlan, SuperAdmin, SuperAdminNotification, SupportTicket
+│   └── tenant/                 # [TENANT] Schema templates for each aktech_RESTOxxx DB
+│       ├── menu/               # Product, Category, SubItem, Banner, Offer
+│       ├── orders/             # Order, Bill, KitchenBill
+│       ├── ops/                # Table, Settings, Notification, Reservation
+│       ├── hr/                 # HRStaff, HRAttendance, HRLeave, HRShift, HRPayroll
+│       └── accounting/         # AccLedger, AccTransaction
+├── routes/                     # Root `*Routes.js` re-exports; real routers under `platform/` + `tenant/` (menu, orders, ops, hr, accounting)
+├── services/                   # Root service files re-export `cron/`, `email/`, `pdf/`
+│   ├── cron/cronService.js     # HR + subscription scheduled jobs
+│   ├── email/emailService.js   # Nodemailer
+│   └── pdf/payslipService.js   # Payslip PDF
+├── utils/                      # Root util files re-export `database/`, `socket/`, `schema/`
+│   ├── database/               # dbConnection + getModel (multi-tenant core)
+│   ├── socket/socketUtils.js   # Room-scoped Socket.io emit helper
+│   └── schema/tenantPlugin.js  # Mongoose tenant plugin helpers
 └── uploads/                    # Local file storage (attendance selfies)
 ```
 
@@ -328,7 +265,7 @@ Standard CRUD endpoints. All require `restaurantId` via middleware.
 - All server emissions use `io.to(restaurantId).emit()` — **never** global `io.emit()`.
 - Staff clients send their JWT token during `joinRoom` for authentication.
 
-### Server-Side (in `server.js`)
+### Server-Side (in `src/attachSocket.js`; HTTP API composed in `src/http/`)
 ```js
 socket.on('joinRoom', async ({ restaurantId, token }) => {
   socket.join(restaurantId);
@@ -356,7 +293,7 @@ socket.on('joinRoom', async ({ restaurantId, token }) => {
 | `newNotification` | notificationRoutes | Alert for admin |
 | `newReservation` | reservationRoutes | New table reservation |
 | `attendanceUpdate` | hrAttendanceController | Attendance check-in/out |
-| `ordersSnapshot` | server.js (joinRoom) | Initial orders state for staff |
+| `ordersSnapshot` | src/attachSocket.js (joinRoom) | Initial orders state for staff |
 
 ---
 
