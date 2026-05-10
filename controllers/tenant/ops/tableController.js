@@ -1,5 +1,6 @@
 const TableModel = require("../../../models/Table");
 const { getModel } = require("../../../utils/getModel");
+const { getPlanLimits } = require("../../../utils/subscriptionLimits");
 
 // @desc    Get all tables
 // @route   GET /api/tables
@@ -17,19 +18,34 @@ const addTable = async (req, res) => {
   const Table = await getModel("Table", TableModel.schema, req.restaurantId);
   const { id, capacity } = req.body;
 
+  const limits = getPlanLimits(req.restaurant);
+  const activeCount = await Table.countDocuments({ isActive: true });
+
   const tableExists = await Table.findOne({ tableId: id });
 
   if (tableExists) {
     if (tableExists.isActive) {
       res.status(400);
       throw new Error("Table already exists");
-    } else {
-      tableExists.isActive = true;
-      tableExists.capacity = capacity || 4;
-      const updatedTable = await tableExists.save();
-      res.status(201).json({ id: updatedTable.tableId, capacity: updatedTable.capacity });
-      return;
     }
+    if (activeCount >= limits.maxTables) {
+      res.status(403);
+      throw new Error(
+        `Your plan allows up to ${limits.maxTables} tables. Remove a table or upgrade your subscription.`
+      );
+    }
+    tableExists.isActive = true;
+    tableExists.capacity = capacity || 4;
+    const updatedTable = await tableExists.save();
+    res.status(201).json({ id: updatedTable.tableId, capacity: updatedTable.capacity });
+    return;
+  }
+
+  if (activeCount >= limits.maxTables) {
+    res.status(403);
+    throw new Error(
+      `Your plan allows up to ${limits.maxTables} tables. Remove a table or upgrade your subscription.`
+    );
   }
 
   const table = await Table.create({

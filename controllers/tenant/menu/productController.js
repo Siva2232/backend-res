@@ -1,5 +1,6 @@
 const ProductModel = require("../../../models/Product");
 const { getModel } = require("../../../utils/getModel");
+const { getPlanLimits } = require("../../../utils/subscriptionLimits");
 
 // @desc    Fetch all products
 // @route   GET /api/products
@@ -64,6 +65,14 @@ const getProductById = async (req, res) => {
 const createProduct = async (req, res) => {
   try {
     const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
+    const limits = getPlanLimits(req.restaurant);
+    const currentCount = await Product.countDocuments();
+    if (currentCount >= limits.maxProducts) {
+      return res.status(403).json({
+        message: `Your plan allows up to ${limits.maxProducts} menu items. Remove items or upgrade your subscription.`,
+      });
+    }
+
     const { name, price, image, category, description, type, isAvailable, available,
             hasPortions, portions, addonGroups } = req.body;
 

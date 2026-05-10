@@ -11,7 +11,11 @@
     "dev": "nodemon server.js",
     "data:import": "node seeder.js",
     "data:destroy": "node seeder.js -d",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "load-test:smoke": "npm --prefix ../load-tests run smoke",
+    "load-test:pre": "npm --prefix ../load-tests run pre-production",
+    "load-test:stress": "npm --prefix ../load-tests run stress",
+    "load-test:admin": "npm --prefix ../load-tests run admin"
   },
   "keywords": [],
   "author": "",

@@ -8,7 +8,7 @@ const validator = require("validator");
 
 const PLAN_FEATURE_KEYS = [
   "hr",
-  "inventory",
+  // "inventory",
   "reports",
   "qrMenu",
   "onlineOrders",
@@ -106,7 +106,10 @@ const getRestaurantBranding = async (req, res) => {
     const restaurant = await Restaurant.findOne(
       { restaurantId: req.params.restaurantId.toUpperCase() },
       "restaurantId name logo primaryColor secondaryColor accentColor sidebarBgColor sidebarTextColor theme fontFamily features subscriptionPlan subscriptionStatus subscriptionExpiry receiptHeader"
-    ).populate("subscriptionPlan", "name price duration features");
+    ).populate(
+      "subscriptionPlan",
+      "name price duration features maxTables maxProducts maxStaff"
+    );
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     // Base visual-only response — safe for unauthenticated customers
@@ -142,7 +145,7 @@ const getRestaurantBranding = async (req, res) => {
         jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
         response.features = {
           hr:           restaurant.features?.hr ?? false,
-          inventory:    restaurant.features?.inventory ?? false,
+          // inventory:    restaurant.features?.inventory ?? false,
           reports:      restaurant.features?.reports ?? false,
           qrMenu:       restaurant.features?.qrMenu ?? false,
           onlineOrders: restaurant.features?.onlineOrders ?? false,
@@ -362,7 +365,7 @@ const getRestaurantFeatures = async (req, res) => {
     // Explicit defaults so missing DB fields never silently hide a feature
     res.json({
       hr:           f.hr           ?? true,
-      inventory:    f.inventory    ?? false,
+      // inventory:    f.inventory    ?? false,
       reports:      f.reports      ?? true,
       qrMenu:       f.qrMenu       ?? true,
       onlineOrders: f.onlineOrders ?? false,
@@ -406,7 +409,7 @@ const updateFeatures = async (req, res) => {
     // Merge incoming features (only update provided keys)
     const allowed = [
       "hr",
-      "inventory",
+      // "inventory",
       "reports",
       "qrMenu",
       "onlineOrders",
@@ -441,7 +444,7 @@ const updateFeatures = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const assignPlan = async (req, res) => {
   try {
-    const { planId, paymentAmount, paymentMethod, paymentReference } = req.body;
+    const { planId, paymentAmount, paymentMethod, paymentReference, forceRenew } = req.body;
 
     const [restaurant, plan] = await Promise.all([
       Restaurant.findOne({ restaurantId: req.params.restaurantId.toUpperCase() }),
@@ -450,6 +453,33 @@ const assignPlan = async (req, res) => {
 
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
     if (!plan)       return res.status(404).json({ message: "Plan not found" });
+
+    const samePlanAlready =
+      restaurant.subscriptionPlan &&
+      String(restaurant.subscriptionPlan) === String(plan._id);
+    const expiryStillInFuture =
+      restaurant.subscriptionExpiry &&
+      new Date(restaurant.subscriptionExpiry) > new Date();
+    const statusCountsAsRunning =
+      restaurant.subscriptionStatus === "active" || restaurant.subscriptionStatus === "trial";
+
+    // Do not stack another billing period when the tenant already has this plan with a future end date.
+    // Super Admin "edit restaurant" used to call assignPlan every save — that repeatedly extended expiry.
+    // Pass forceRenew: true to deliberately add another plan duration while still active (same plan).
+    if (
+      samePlanAlready &&
+      expiryStillInFuture &&
+      statusCountsAsRunning &&
+      !forceRenew
+    ) {
+      mergePlanFeaturesIntoRestaurant(restaurant, plan);
+      await restaurant.save();
+      clearTenantCache(restaurant.restaurantId);
+      return res.json({
+        message: "Plan unchanged — subscription end date left as-is",
+        restaurant,
+      });
+    }
 
     let newExpiry = new Date();
     if (
@@ -650,7 +680,7 @@ const getAnalytics = async (req, res) => {
     // Feature usage stats
     const featureUsage = {
       hr:           await Restaurant.countDocuments({ "features.hr":           true }),
-      inventory:    await Restaurant.countDocuments({ "features.inventory":    true }),
+      // inventory:    await Restaurant.countDocuments({ "features.inventory":    true }),
       onlineOrders: await Restaurant.countDocuments({ "features.onlineOrders": true }),
       qrMenu:       await Restaurant.countDocuments({ "features.qrMenu":       true }),
       kitchenPanel: await Restaurant.countDocuments({ "features.kitchenPanel": true }),
