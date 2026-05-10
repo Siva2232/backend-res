@@ -22,6 +22,7 @@ function validateProductionEnv() {
  */
 function getAllowedCorsOrigins() {
   const defaults = [
+    "https://restowebtests.netlify.app",
     "https://restowebtest.netlify.app",
     "http://localhost:5173",
     "http://localhost:3000",
