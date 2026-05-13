@@ -1,6 +1,8 @@
 const SubscriptionPlan = require("../../models/SubscriptionPlan");
 const Restaurant = require("../../models/Restaurant");
 const { clearTenantCache } = require("../../middleware/tenantMiddleware");
+const { mergePlanFeaturesIntoRestaurant } = require("../../utils/planFeatureMerge");
+const { normalizePlanFeaturesObject } = require("../../constants/subscriptionFeatureFlags");
 
 const normalizeDurationDays = (duration) => {
   const raw = duration !== undefined && duration !== null ? Number(duration) : 30;
@@ -41,8 +43,14 @@ const createPlan = async (req, res) => {
     if (!name || price === undefined) return res.status(400).json({ message: "name and price are required" });
 
     const plan = await SubscriptionPlan.create({
-      name, price, duration: normalizeDurationDays(duration), description,
-      features: features || {}, maxTables, maxProducts, maxStaff,
+      name,
+      price,
+      duration: normalizeDurationDays(duration),
+      description,
+      features: normalizePlanFeaturesObject(features),
+      maxTables,
+      maxProducts,
+      maxStaff,
       sortOrder: sortOrder || 0,
     });
     res.status(201).json(plan);
@@ -56,18 +64,37 @@ const createPlan = async (req, res) => {
 // @access  Private/SuperAdmin
 const updatePlan = async (req, res) => {
   try {
-    const patch = { ...req.body };
+    const allowed = [
+      "name",
+      "price",
+      "duration",
+      "description",
+      "features",
+      "maxTables",
+      "maxProducts",
+      "maxStaff",
+      "sortOrder",
+      "isActive",
+    ];
+    const patch = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) patch[key] = req.body[key];
+    }
     if (patch.duration !== undefined) {
       patch.duration = normalizeDurationDays(patch.duration);
     }
+    if (patch.features !== undefined) {
+      patch.features = normalizePlanFeaturesObject(patch.features);
+    }
     const plan = await SubscriptionPlan.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
     if (!plan) return res.status(404).json({ message: "Plan not found" });
-    // Bust tenant cache for restaurants on this plan so limits/features reflect immediately.
-    // tenantMiddleware caches populated subscriptionPlan for ~60s by default.
+    // Re-merge plan-included modules into every tenant on this plan, then bust cache.
     try {
-      const restaurants = await Restaurant.find({ subscriptionPlan: plan._id }).select("restaurantId").lean();
-      for (const r of restaurants) {
-        if (r?.restaurantId) clearTenantCache(r.restaurantId);
+      const tenants = await Restaurant.find({ subscriptionPlan: plan._id });
+      for (const r of tenants) {
+        mergePlanFeaturesIntoRestaurant(r, plan);
+        await r.save();
+        if (r.restaurantId) clearTenantCache(r.restaurantId);
       }
     } catch (_) {}
     res.json(plan);

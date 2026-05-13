@@ -1,37 +1,43 @@
 const mongoose = require("mongoose");
+const {
+  PLAN_FEATURE_KEYS,
+  PLAN_FEATURE_DEFAULTS,
+  PLAN_FEATURE_INVENTORY_DEFAULT,
+  normalizePlanFeaturesObject,
+} = require("../../constants/subscriptionFeatureFlags");
+
+const planFeaturesShape = {
+  inventory: { type: Boolean, default: PLAN_FEATURE_INVENTORY_DEFAULT },
+};
+for (const key of PLAN_FEATURE_KEYS) {
+  planFeaturesShape[key] = {
+    type: Boolean,
+    default: PLAN_FEATURE_DEFAULTS[key],
+  };
+}
 
 const subscriptionPlanSchema = new mongoose.Schema(
   {
-    name:        { type: String, required: true, unique: true, trim: true }, // Basic, Pro, Premium
-    price:       { type: Number, required: true },      // Monthly price in base currency
-    duration:    { type: Number, required: true, default: 30 }, // Days of access
+    name: { type: String, required: true, unique: true, trim: true },
+    price: { type: Number, required: true },
+    duration: { type: Number, required: true, default: 30 },
     description: { type: String, default: "" },
-    isActive:    { type: Boolean, default: true },
+    isActive: { type: Boolean, default: true },
 
-    // Which features are included in this plan
-    features: {
-      hr:           { type: Boolean, default: false },
-      inventory:    { type: Boolean, default: false },
-      reports:      { type: Boolean, default: true },
-      qrMenu:       { type: Boolean, default: true },
-      onlineOrders: { type: Boolean, default: false },
-      kitchenPanel: { type: Boolean, default: true },
-      waiterPanel:  { type: Boolean, default: true },
-      accounting:   { type: Boolean, default: true },
-      hrStaff:         { type: Boolean, default: true },
-      hrAttendance:    { type: Boolean, default: true },
-      hrLeaves:        { type: Boolean, default: true },
-      reservations:    { type: Boolean, default: true },
-    },
+    features: planFeaturesShape,
 
-    // Soft limits
-    maxTables:   { type: Number, default: 20 },
+    maxTables: { type: Number, default: 20 },
     maxProducts: { type: Number, default: 100 },
-    maxStaff:    { type: Number, default: 10 },
+    maxStaff: { type: Number, default: 10 },
 
     sortOrder: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+
+subscriptionPlanSchema.pre("validate", function (next) {
+  this.features = normalizePlanFeaturesObject(this.features);
+  next();
+});
 
 module.exports = mongoose.model("SubscriptionPlan", subscriptionPlanSchema);

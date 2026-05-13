@@ -4,24 +4,12 @@ const User = require("../../models/User");
 const SuperAdminNotification = require("../../models/SuperAdminNotification");
 
 const { clearTenantCache } = require("../../middleware/tenantMiddleware");
+const { mergePlanFeaturesIntoRestaurant } = require("../../utils/planFeatureMerge");
+const {
+  PLAN_FEATURE_KEYS,
+  tenantFeaturesApiPayload,
+} = require("../../constants/subscriptionFeatureFlags");
 const validator = require("validator");
-
-const PLAN_FEATURE_KEYS = [
-  "hr",
-  // "inventory",
-  "reports",
-  "qrMenu",
-  "onlineOrders",
-  "kitchenPanel",
-  "waiterPanel",
-  "waiterCall",
-  "billRequest",
-  "accounting",
-  "hrStaff",
-  "hrAttendance",
-  "hrLeaves",
-  "reservations",
-];
 
 /** Days of access from a subscription plan document (always a positive integer). */
 const getPlanDurationDays = (plan) => {
@@ -39,17 +27,6 @@ function addTrialDaysFrom(baseDate = new Date()) {
   const d = new Date(baseDate);
   d.setDate(d.getDate() + DEFAULT_TRIAL_DAYS);
   return d;
-}
-
-function mergePlanFeaturesIntoRestaurant(restaurant, plan) {
-  if (!restaurant.features || typeof restaurant.features !== "object") {
-    restaurant.features = {};
-  }
-  const planFeatures = plan.features?.toObject ? plan.features.toObject() : plan.features || {};
-  for (const key of PLAN_FEATURE_KEYS) {
-    if (planFeatures[key]) restaurant.features[key] = true;
-  }
-  restaurant.markModified("features");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -372,23 +349,7 @@ const getRestaurantFeatures = async (req, res) => {
     );
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
-    const f = restaurant.features || {};
-    // Explicit defaults so missing DB fields never silently hide a feature
-    res.json({
-      hr:           f.hr           ?? true,
-      // inventory:    f.inventory    ?? false,
-      reports:      f.reports      ?? true,
-      qrMenu:       f.qrMenu       ?? true,
-      onlineOrders: f.onlineOrders ?? false,
-      kitchenPanel: f.kitchenPanel ?? true,
-      waiterPanel:  f.waiterPanel  ?? true,
-      waiterCall:   f.waiterCall   ?? true,
-      billRequest:  f.billRequest  ?? true,
-      accounting:   f.accounting   ?? true,
-      hrStaff:      f.hrStaff      ?? true,
-      hrAttendance: f.hrAttendance ?? true,
-      hrLeaves:     f.hrLeaves     ?? true,
-    });
+    res.json(tenantFeaturesApiPayload(restaurant.features));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -417,24 +378,8 @@ const updateFeatures = async (req, res) => {
       restaurant.features = {};
     }
 
-    // Merge incoming features (only update provided keys)
-    const allowed = [
-      "hr",
-      // "inventory",
-      "reports",
-      "qrMenu",
-      "onlineOrders",
-      "kitchenPanel",
-      "waiterPanel",
-      "waiterCall",
-      "billRequest",
-      "accounting",
-      "hrStaff",
-      "hrAttendance",
-      "hrLeaves",
-      "reservations",
-    ];
-    for (const key of allowed) {
+    // Merge incoming features (only update provided keys; keys aligned with plan merge list)
+    for (const key of PLAN_FEATURE_KEYS) {
       if (incoming && incoming[key] !== undefined) {
         restaurant.features[key] = Boolean(incoming[key]);
       }
