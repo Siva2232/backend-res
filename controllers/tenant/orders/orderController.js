@@ -20,8 +20,10 @@ const Settings    = (req) => getModel("Settings",    SettingsModel.schema,    re
 
 // ── In-memory cache to avoid a DB hit on every token / stats request ──────────
 let _cachedTokenResetAt = null; // updated when resetTokenCount is called
-let _statsCache = null;
-let _statsCacheExpiry = 0; // epoch ms
+/** @type {Map<string, { data: object, expiry: number }>} keyed by restaurantId — never share stats across tenants */
+const _statsCacheByRestaurant = new Map();
+
+const statsCacheKey = (req) => String(req.restaurantId || "").toUpperCase();
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -488,7 +490,7 @@ const resetTokenCount = async (req, res) => {
 
     // Invalidate in-memory cache so getTokens picks up the new reset time
     _cachedTokenResetAt = now.toISOString();
-    _statsCache = null; // also bust stats cache
+    _statsCacheByRestaurant.delete(statsCacheKey(req)); // bust stats cache for this tenant
 
     // 3. Emit socket event so all connected frontends refresh instantly
     const io = req.app.get("io");
@@ -636,10 +638,12 @@ const getOrderStats = async (req, res) => {
   try {
     const now = Date.now();
 
+    const cacheKey = statsCacheKey(req);
+    const cached = _statsCacheByRestaurant.get(cacheKey);
     // Serve from in-memory cache if fresh (30s TTL for low DB pressure)
-    if (_statsCache && now < _statsCacheExpiry) {
+    if (cached && now < cached.expiry) {
       res.set('Cache-Control', 'private, max-age=30');
-      return res.json(_statsCache);
+      return res.json(cached.data);
     }
 
     const startOfDay = new Date();
@@ -650,11 +654,19 @@ const getOrderStats = async (req, res) => {
       (await Order(req)).countDocuments({ createdAt: { $gte: startOfDay } }),
       (await Order(req)).aggregate([
         { $match: { status: { $in: ["Paid", "Closed"] } } },
-        { $group: {
-            _id: null,
-            totalRevenue: { $sum: "$billDetails.grandTotal" },
-            totalRevenueFallback: { $sum: "$totalAmount" }
-        }},
+        {
+          $addFields: {
+            // Per order: prefer bill grand total when set & positive; else POS totalAmount (matches dashboard reality)
+            _orderGross: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$billDetails.grandTotal", 0] }, 0] },
+                "$billDetails.grandTotal",
+                { $ifNull: ["$totalAmount", 0] },
+              ],
+            },
+          },
+        },
+        { $group: { _id: null, totalRevenue: { $sum: "$_orderGross" } } },
       ]),
     ]);
 
@@ -669,13 +681,12 @@ const getOrderStats = async (req, res) => {
     ]);
 
     const revRow = revenueAgg[0] || {};
-    const totalRevenue = revRow.totalRevenue || revRow.totalRevenueFallback || 0;
+    const totalRevenue = Number(revRow.totalRevenue) || 0;
 
     const stats = { todayCount, totalRevenue, bestSellers: sellersAgg };
 
-    // Store in memory cache for 30s
-    _statsCache = stats;
-    _statsCacheExpiry = now + 30000;
+    // Store in memory cache for 30s (scoped to this restaurant)
+    _statsCacheByRestaurant.set(cacheKey, { data: stats, expiry: now + 30000 });
 
     res.set('Cache-Control', 'private, max-age=30');
     res.json(stats);

@@ -21,6 +21,8 @@ const PLAN_FEATURE_DEFAULTS = Object.freeze({
   hrAttendance: true,
   hrLeaves: true,
   reservations: true,
+  customerPayLater: true,
+  customerOnlinePayment: true,
 });
 
 /** Keys merged from plan → restaurant (stable key order). */
@@ -61,6 +63,8 @@ const TENANT_FEATURE_READ_DEFAULTS = Object.freeze({
   hrAttendance: true,
   hrLeaves: true,
   reservations: true,
+  customerPayLater: true,
+  customerOnlinePayment: true,
 });
 
 /**

@@ -44,6 +44,10 @@ const restaurantSchema = new mongoose.Schema(
       hrLeaves:        { type: Boolean, default: true },
       /** Table reservations (admin UI, floor dots, customer table gate) */
       reservations:    { type: Boolean, default: true },
+      /** Customer cart — pay at table / later */
+      customerPayLater:       { type: Boolean, default: true },
+      /** Customer cart — online card checkout */
+      customerOnlinePayment: { type: Boolean, default: true },
     },
 
     // Subscription

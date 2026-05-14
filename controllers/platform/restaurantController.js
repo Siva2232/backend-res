@@ -146,6 +146,8 @@ const getRestaurantBranding = async (req, res) => {
           hrAttendance: getEffectiveFeature("hrAttendance", true),
           hrLeaves:     getEffectiveFeature("hrLeaves", true),
           reservations: getEffectiveFeature("reservations", true),
+          customerPayLater: getEffectiveFeature("customerPayLater", true),
+          customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
         };
       } catch (_) {
         // invalid/expired token — treat as public request
@@ -153,6 +155,8 @@ const getRestaurantBranding = async (req, res) => {
           qrMenu: getEffectiveFeature("qrMenu", false),
           onlineOrders: getEffectiveFeature("onlineOrders", false),
           reservations: getEffectiveFeature("reservations", true),
+          customerPayLater: getEffectiveFeature("customerPayLater", true),
+          customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
         };
       }
     } else {
@@ -161,6 +165,8 @@ const getRestaurantBranding = async (req, res) => {
         qrMenu: getEffectiveFeature("qrMenu", false),
         onlineOrders: getEffectiveFeature("onlineOrders", false),
         reservations: getEffectiveFeature("reservations", true),
+        customerPayLater: getEffectiveFeature("customerPayLater", true),
+        customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
       };
     }
 
