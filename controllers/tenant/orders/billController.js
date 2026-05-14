@@ -105,23 +105,29 @@ const markBillPaid = async (req, res) => {
     }
 
     bill.paymentStatus = "paid";
-    await bill.save();
 
-    const order = await (await Order(req)).findById(bill.orderRef);
-    if (order) {
-      order.paymentSessions = bill.paymentSessions;
-      order.paymentStatus = bill.paymentStatus;
-      if (order.status !== "Closed") order.status = "Paid";
-      await order.save();
-      const io = req.app.get("io");
-      if (io) {
-        io.to(req.restaurantId).emit("orderUpdated", order);
-        io.to(`table-${order.table}`).emit("orderUpdated", order);
+    const orderDoc = await (await Order(req)).findById(bill.orderRef);
+    const billSave = bill.save();
+
+    const orderSave = (async () => {
+      if (!orderDoc) return;
+      orderDoc.paymentSessions = bill.paymentSessions;
+      orderDoc.paymentStatus = bill.paymentStatus;
+      if (orderDoc.status !== "Closed") orderDoc.status = "Paid";
+      await orderDoc.save();
+    })();
+
+    await Promise.all([billSave, orderSave]);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(req.restaurantId).emit("billUpdated", bill);
+      if (orderDoc) {
+        io.to(req.restaurantId).emit("orderUpdated", orderDoc);
+        io.to(`table-${orderDoc.table}`).emit("orderUpdated", orderDoc);
       }
     }
 
-    const io = req.app.get("io");
-    if (io) io.to(req.restaurantId).emit("billUpdated", bill);
     res.json(bill);
   } catch (error) {
     console.error("markBillPaid error", error);
