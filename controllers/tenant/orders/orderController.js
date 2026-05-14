@@ -38,7 +38,6 @@ const addOrderItems = async (req, res) => {
     paymentMethod,
     paymentStatus,
     paymentId,
-    status,
     customerName,
     customerAddress,
     deliveryTime,
@@ -280,7 +279,8 @@ const addOrderItems = async (req, res) => {
     paymentMethod: paymentMethod || "cod",
     paymentStatus: paymentStatus || "pending",
     paymentId: paymentId || null,
-    status: status || "New",
+    // New POS / QR / manual tickets always enter the queue as "New" (ignore client status)
+    status: "New",
     customerName,
     customerAddress,
     deliveryTime,
