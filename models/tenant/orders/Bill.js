@@ -74,6 +74,8 @@ const billSchema = mongoose.Schema(
 billSchema.index({ billedAt: -1 });
 billSchema.index({ createdAt: -1 });
 billSchema.index({ orderRef: 1 });
+// Open bills + recent closed (getBills default $or on status / billedAt)
+billSchema.index({ status: 1, billedAt: -1 });
 
 
 module.exports = mongoose.model("Bill", billSchema);

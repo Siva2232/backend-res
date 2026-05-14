@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const OrderModel = require("../../../models/Order");
 const BillModel = require("../../../models/Bill");
 const KitchenBillModel = require("../../../models/KitchenBill");
@@ -5,6 +6,11 @@ const SettingsModel = require("../../../models/Settings");
 const jwt = require("jsonwebtoken");
 const User = require("../../../models/User");
 const { getModel } = require("../../../utils/getModel");
+const {
+  GST_CGST_RATE,
+  GST_SGST_RATE,
+  GST_INCLUSIVE_MULTIPLIER,
+} = require("../../../utils/gstRates");
 
 // Per-request dynamic model helpers (now async — returns Promise<Model>)
 const Order       = (req) => getModel("Order",       OrderModel.schema,       req.restaurantId);
@@ -104,8 +110,8 @@ const addOrderItems = async (req, res) => {
     
     // Recalculate totals from all items (existing + new)
     const newSubtotal = existingOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const newCgst = newSubtotal * 0.025;
-    const newSgst = newSubtotal * 0.025;
+    const newCgst = newSubtotal * GST_CGST_RATE;
+    const newSgst = newSubtotal * GST_SGST_RATE;
     const newGrandTotal = newSubtotal + newCgst + newSgst;
     
     existingOrder.totalAmount = newGrandTotal;
@@ -133,7 +139,7 @@ const addOrderItems = async (req, res) => {
 
     // Track payment session for this specific batch
     const currentBatchTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const batchGrandTotal = currentBatchTotal * 1.05; // Incl 5% GST for this batch
+    const batchGrandTotal = currentBatchTotal * GST_INCLUSIVE_MULTIPLIER; // incl. GST on batch
     
     if (!existingOrder.paymentSessions) existingOrder.paymentSessions = [];
     
@@ -373,16 +379,32 @@ const addOrderItems = async (req, res) => {
   })();
 };
 
-// @desc    Get order by ID
+// @desc    Get order by ID (public — customer status page; lean + narrow projection, no populate)
 // @route   GET /api/orders/:id
 // @access  Public
 const getOrderById = async (req, res) => {
-  const order = await (await Order(req)).findById(req.params.id).populate("items.product", "name price image");
+  const rawId = String(req.params.id || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(rawId)) {
+    return res.status(400).json({ message: "Invalid order id" });
+  }
 
-  if (order) {
-    res.json(order);
-  } else {
-    res.status(404).json({ message: "Order not found" });
+  res.set("Cache-Control", "private, max-age=4, stale-while-revalidate=15");
+
+  try {
+    const order = await (await Order(req))
+      .findById(rawId)
+      .select(
+        "table status totalAmount createdAt updatedAt customerName hasTakeaway deliveryTime items.name items.qty items.price items.image items.isTakeaway isTakeawayOrder tokenNumber billDetails paymentStatus paymentMethod notes"
+      )
+      .lean();
+
+    if (order) {
+      return res.json(order);
+    }
+    return res.status(404).json({ message: "Order not found" });
+  } catch (err) {
+    console.error("getOrderById error:", err);
+    return res.status(500).json({ message: "Server error loading order" });
   }
 };
 
@@ -540,8 +562,13 @@ const getOrders = async (req, res) => {
   try {
     let filter = {};
     if (req.query.status) {
-      const statuses = req.query.status.split(",");
-      filter.status = { $in: statuses };
+      const statuses = String(req.query.status)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (statuses.length) {
+        filter.status = { $in: statuses };
+      }
     }
 
     // performance optimization: if we have "today" param, filter to current day
