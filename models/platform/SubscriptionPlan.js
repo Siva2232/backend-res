@@ -35,9 +35,8 @@ const subscriptionPlanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-subscriptionPlanSchema.pre("validate", function (next) {
+subscriptionPlanSchema.pre("validate", function () {
   this.features = normalizePlanFeaturesObject(this.features);
-  next();
 });
 
 module.exports = mongoose.model("SubscriptionPlan", subscriptionPlanSchema);
