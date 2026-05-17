@@ -1,6 +1,7 @@
 const ProductModel = require("../../../models/Product");
 const { getModel } = require("../../../utils/getModel");
 const { getPlanLimits } = require("../../../utils/subscriptionLimits");
+const { resolveProductStockFields } = require("../../../utils/productStock");
 
 // @desc    Fetch all products
 // @route   GET /api/products
@@ -81,6 +82,17 @@ const createProduct = async (req, res) => {
       throw new Error("Missing required product fields");
     }
 
+    const stockFields = resolveProductStockFields({
+      trackStock: req.body.trackStock,
+      stock: req.body.stock,
+      isAvailable:
+        isAvailable !== undefined
+          ? isAvailable
+          : available !== undefined
+            ? available
+            : true,
+    });
+
     const product = new Product({
       name,
       price,
@@ -88,8 +100,9 @@ const createProduct = async (req, res) => {
       category,
       description,
       type: type || "",
-      stock: req.body.stock || 0,
-      isAvailable: isAvailable !== undefined ? isAvailable : (available !== undefined ? available : true),
+      trackStock: stockFields.trackStock,
+      stock: stockFields.stock,
+      isAvailable: stockFields.isAvailable,
       hasPortions: hasPortions || false,
       portions: hasPortions && Array.isArray(portions) ? portions : [],
       addonGroups: Array.isArray(addonGroups) ? addonGroups : [],
@@ -121,8 +134,17 @@ const updateProduct = async (req, res) => {
     const { name, price, image, category, description, isAvailable, available, type,
             hasPortions, portions, addonGroups } = req.body;
 
-    // Use findByIdAndUpdate to avoid VersionError (No matching document found for id/version)
-    // and bypass Mongoose __v versioning checks which can fail during rapid updates.
+    const existing = await Product.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const stockTouched =
+      req.body.trackStock !== undefined ||
+      req.body.stock !== undefined ||
+      isAvailable !== undefined ||
+      available !== undefined;
+
     const updatedData = {
       name: name !== undefined ? name : undefined,
       price: price !== undefined ? price : undefined,
@@ -130,17 +152,32 @@ const updateProduct = async (req, res) => {
       category: category !== undefined ? category : undefined,
       description: description !== undefined ? description : undefined,
       type: type !== undefined ? type : undefined,
-      stock: req.body.stock !== undefined ? req.body.stock : undefined,
-      isAvailable: isAvailable !== undefined 
-        ? isAvailable 
-        : (available !== undefined ? available : undefined),
       hasPortions: hasPortions !== undefined ? hasPortions : undefined,
       portions: hasPortions !== undefined ? (hasPortions ? portions : []) : undefined,
-      addonGroups: addonGroups !== undefined ? addonGroups : undefined
+      addonGroups: addonGroups !== undefined ? addonGroups : undefined,
     };
 
-    // Remove undefined fields so they don't overwrite with null/undefined
-    Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
+    if (stockTouched) {
+      const manualAvailable =
+        isAvailable !== undefined
+          ? isAvailable
+          : available !== undefined
+            ? available
+            : undefined;
+      const stockFields = resolveProductStockFields({
+        trackStock: req.body.trackStock,
+        stock: req.body.stock,
+        isAvailable: manualAvailable,
+        existing,
+      });
+      updatedData.trackStock = stockFields.trackStock;
+      updatedData.stock = stockFields.stock;
+      updatedData.isAvailable = stockFields.isAvailable;
+    } else if (req.body.trackStock === false && existing.trackStock) {
+      updatedData.trackStock = false;
+    }
+
+    Object.keys(updatedData).forEach((key) => updatedData[key] === undefined && delete updatedData[key]);
 
     const product = await Product.findByIdAndUpdate(
       req.params.id,
@@ -190,10 +227,51 @@ const deleteProduct = async (req, res) => {
   }
 };
 
+// @desc    Set or adjust quantity for tracked products
+// @route   PATCH /api/products/:id/stock
+// @access  Private/Admin
+const adjustProductStock = async (req, res) => {
+  try {
+    const Product = await getModel("Product", ProductModel.schema, req.restaurantId);
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const { stock, delta } = req.body;
+    let nextStock = Number(product.stock) || 0;
+
+    if (stock !== undefined) {
+      nextStock = Math.max(0, Math.floor(Number(stock) || 0));
+    } else if (delta !== undefined) {
+      nextStock = Math.max(0, nextStock + Math.floor(Number(delta) || 0));
+    } else {
+      return res.status(400).json({ message: "Provide stock or delta" });
+    }
+
+    product.trackStock = true;
+    product.stock = nextStock;
+    product.isAvailable = nextStock > 0;
+    await product.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(req.restaurantId).emit("productUpdated", product);
+      io.to(req.restaurantId).emit("productsUpdated");
+    }
+
+    res.json(product);
+  } catch (error) {
+    console.error("Adjust product stock error:", error);
+    res.status(500).json({ message: error.message || "Failed to update stock" });
+  }
+};
+
 module.exports = {
   getProducts,
   getProductById,
   createProduct,
   updateProduct,
   deleteProduct,
+  adjustProductStock,
 };

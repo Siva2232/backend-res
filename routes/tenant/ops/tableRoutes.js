@@ -2,15 +2,26 @@ const express = require("express");
 const router = express.Router();
 const {
   getTables,
+  createTableCategory,
+  deleteTableCategory,
   addTable,
+  updateTable,
   removeTable,
 } = require("../../../controllers/tableController");
-// Assuming there is a protect/admin middleware in authMiddleware.js
 const { protect, admin, adminOrWaiter } = require("../../../middleware/authMiddleware");
 
-// In this simple setup, everyone has access to GET (needed for customer choosing mode), 
-// but others are protected/admin
+// Area routes before /:id (Floor, Outdoor, etc.)
+router
+  .route("/categories")
+  .post(protect, adminOrWaiter, createTableCategory);
+router
+  .route("/categories/:id")
+  .delete(protect, admin, deleteTableCategory);
+
 router.route("/").get(getTables).post(protect, adminOrWaiter, addTable);
-router.route("/:id").delete(protect, admin, removeTable);
+router
+  .route("/:id")
+  .patch(protect, adminOrWaiter, updateTable)
+  .delete(protect, admin, removeTable);
 
 module.exports = router;

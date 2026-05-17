@@ -6,6 +6,22 @@ const { getModel } = require("../../../utils/getModel");
 const Bill  = (req) => getModel("Bill",  BillModel.schema,  req.restaurantId);
 const Order = (req) => getModel("Order", OrderModel.schema, req.restaurantId);
 
+const sessionRootFromBill = (bill) =>
+  String(bill.sessionRef || bill.orderRef || "");
+
+async function applyToSessionOrders(req, bill, patch) {
+  const root = sessionRootFromBill(bill);
+  if (!root) return [];
+  const OrderM = await Order(req);
+  return OrderM.updateMany(
+    {
+      $or: [{ _id: root }, { sessionRef: root }],
+      status: { $ne: "Closed" },
+    },
+    { $set: patch }
+  );
+}
+
 // @desc    Create new bill
 // @route   POST /api/bills
 // @access  Public (we rely on backend to auto-create, but endpoint exists)
@@ -106,25 +122,28 @@ const markBillPaid = async (req, res) => {
 
     bill.paymentStatus = "paid";
 
-    const orderDoc = await (await Order(req)).findById(bill.orderRef);
-    const billSave = bill.save();
+    await bill.save();
 
-    const orderSave = (async () => {
-      if (!orderDoc) return;
-      orderDoc.paymentSessions = bill.paymentSessions;
-      orderDoc.paymentStatus = bill.paymentStatus;
-      if (orderDoc.status !== "Closed") orderDoc.status = "Paid";
-      await orderDoc.save();
-    })();
+    const root = sessionRootFromBill(bill);
+    await applyToSessionOrders(req, bill, {
+      paymentSessions: bill.paymentSessions,
+      paymentStatus: bill.paymentStatus,
+      status: "Paid",
+    });
 
-    await Promise.all([billSave, orderSave]);
+    const OrderM = await Order(req);
+    const sessionOrders = await OrderM.find({
+      $or: [{ _id: root }, { sessionRef: root }],
+    });
 
     const io = req.app.get("io");
     if (io) {
       io.to(req.restaurantId).emit("billUpdated", bill);
-      if (orderDoc) {
+      for (const orderDoc of sessionOrders) {
         io.to(req.restaurantId).emit("orderUpdated", orderDoc);
-        io.to(`table-${orderDoc.table}`).emit("orderUpdated", orderDoc);
+        if (orderDoc.table) {
+          io.to(`table-${orderDoc.table}`).emit("orderUpdated", orderDoc);
+        }
       }
     }
 
@@ -155,23 +174,30 @@ const closeBill = async (req, res) => {
     }
     await bill.save();
 
-    const order = await (await Order(req)).findById(bill.orderRef);
-    if (order) {
-      order.status = "Closed";
-      order.paymentStatus = "paid";
-      if (order.paymentSessions && order.paymentSessions.length > 0) {
-        order.paymentSessions = order.paymentSessions.map(s => ({ ...s, status: 'paid' }));
-      }
-      await order.save();
-      const io = req.app.get("io");
-      if (io) {
-        io.to(req.restaurantId).emit("orderUpdated", order);
-        io.to(`table-${order.table}`).emit("orderUpdated", order);
-      }
-    }
+    const root = sessionRootFromBill(bill);
+    const paidSessions =
+      bill.paymentSessions?.map((s) => ({ ...s, status: "paid" })) || [];
+    await applyToSessionOrders(req, bill, {
+      status: "Closed",
+      paymentStatus: "paid",
+      paymentSessions: paidSessions,
+    });
+
+    const OrderM = await Order(req);
+    const sessionOrders = await OrderM.find({
+      $or: [{ _id: root }, { sessionRef: root }],
+    });
 
     const io = req.app.get("io");
-    if (io) io.to(req.restaurantId).emit("billUpdated", bill);
+    if (io) {
+      io.to(req.restaurantId).emit("billUpdated", bill);
+      for (const order of sessionOrders) {
+        io.to(req.restaurantId).emit("orderUpdated", order);
+        if (order.table) {
+          io.to(`table-${order.table}`).emit("orderUpdated", order);
+        }
+      }
+    }
     res.json(bill);
   } catch (error) {
     console.error("closeBill error", error);

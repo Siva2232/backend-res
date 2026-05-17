@@ -6,10 +6,12 @@ const {
   createProduct,
   updateProduct,
   deleteProduct,
+  adjustProductStock,
 } = require("../../../controllers/productController");
 const { protect, admin } = require("../../../middleware/authMiddleware");
 
 router.route("/").get(getProducts).post(protect, admin, createProduct);
+router.patch("/:id/stock", protect, admin, adjustProductStock);
 router
   .route("/:id")
   .get(getProductById)

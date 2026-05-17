@@ -8,7 +8,9 @@ const productSchema = mongoose.Schema(
     category: { type: String, required: true, default: "Main" },
     description: { type: String },
     type: { type: String, enum: ["veg", "non-veg", ""], default: "" },
-    stock: { type: Number, default: 0 },
+    /** When true, stock count controls sold-out; when false, use manual isAvailable only. */
+    trackStock: { type: Boolean, default: false },
+    stock: { type: Number, default: 0, min: 0 },
     isAvailable: { type: Boolean, default: true },
 
     // --- Portions (variants like Half / Full) ---

@@ -14,6 +14,11 @@ const tableSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TableCategory",
+      default: null,
+    },
   },
   {
     timestamps: true,

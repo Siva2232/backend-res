@@ -3,6 +3,12 @@ const mongoose = require("mongoose");
 const orderSchema = mongoose.Schema(
   {
     table: { type: String, required: true },
+    /** Root order id for dine-in "add more" rounds (same table session, separate tickets). */
+    sessionRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      default: null,
+    },
     // flag indicating if this dine-in order also includes takeaway items
     // when true, the single bill covers both dine-in and takeaway portions
     hasTakeaway: { type: Boolean, default: false },
@@ -81,6 +87,7 @@ const orderSchema = mongoose.Schema(
 
 // create useful indexes to speed up frequent lookups
 orderSchema.index({ table: 1 });
+orderSchema.index({ sessionRef: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 // compound index: the most common admin query is status-filtered sorted by newest first
 orderSchema.index({ status: 1, createdAt: -1 });

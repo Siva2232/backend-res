@@ -11,6 +11,7 @@ const {
   GST_SGST_RATE,
   GST_INCLUSIVE_MULTIPLIER,
 } = require("../../../utils/gstRates");
+const { deductStockForOrderItems } = require("../../../utils/productStock");
 
 // Per-request dynamic model helpers (now async — returns Promise<Model>)
 const Order       = (req) => getModel("Order",       OrderModel.schema,       req.restaurantId);
@@ -24,6 +25,287 @@ let _cachedTokenResetAt = null; // updated when resetTokenCount is called
 const _statsCacheByRestaurant = new Map();
 
 const statsCacheKey = (req) => String(req.restaurantId || "").toUpperCase();
+
+const ACTIVE_ADD_MORE_PARENT_STATUSES = ["Pending", "New", "Preparing", "Ready", "Served"];
+
+function mapIncomingOrderItems(orderItems) {
+  return orderItems.map((x) => ({
+    ...x,
+    product: x._id,
+    _id: undefined,
+    selectedPortion: x.selectedPortion || undefined,
+    selectedAddons: x.selectedAddons || [],
+  }));
+}
+
+async function attachWaiterFromAuth(req, orderData) {
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+    try {
+      const token = req.headers.authorization.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const authUser = await User.findOne({
+        _id: decoded.id,
+        restaurantId: req.restaurantId,
+      })
+        .select("_id isWaiter")
+        .lean();
+      if (authUser && authUser.isWaiter) {
+        orderData.waiter = authUser._id;
+      }
+    } catch {
+      // ignore invalid token
+    }
+  }
+}
+
+function recalcBillTotalsFromItems(items) {
+  const subtotal = (items || []).reduce(
+    (sum, item) => sum + (item.price || 0) * (item.qty || 0),
+    0
+  );
+  const cgst = subtotal * GST_CGST_RATE;
+  const sgst = subtotal * GST_SGST_RATE;
+  const grandTotal = subtotal + cgst + sgst;
+  return {
+    subtotal,
+    cgst,
+    sgst,
+    grandTotal,
+    totalAmount: grandTotal,
+    billDetails: { subtotal, cgst, sgst, grandTotal },
+  };
+}
+
+async function findOpenSessionBill(req, sessionRootId) {
+  const root = String(sessionRootId);
+  return (await Bill(req)).findOne({
+    status: { $ne: "Closed" },
+    $or: [{ sessionRef: root }, { orderRef: root }],
+  }).sort({ billedAt: 1 });
+}
+
+/** Merge add-more round into the single session invoice (kitchen ticket stays separate). */
+async function mergeRoundIntoSessionBill(req, sessionRootId, roundOrder, io) {
+  const sessionRoot = sessionRootId || roundOrder.sessionRef || roundOrder._id;
+  const addedAt = new Date();
+  const newItems = (roundOrder.items || []).map((item) => ({
+    ...(item.toObject ? item.toObject() : item),
+    addedAt,
+    isNewItem: true,
+  }));
+
+  let bill = await findOpenSessionBill(req, sessionRoot);
+
+  if (!bill) {
+    const totals = recalcBillTotalsFromItems(newItems);
+    bill = await (await Bill(req)).create({
+      orderRef: sessionRoot,
+      sessionRef: sessionRoot,
+      table: roundOrder.table,
+      hasTakeaway: roundOrder.hasTakeaway,
+      isTakeawayOrder: roundOrder.isTakeawayOrder,
+      tokenNumber: roundOrder.tokenNumber,
+      customerName: roundOrder.customerName,
+      customerAddress: roundOrder.customerAddress,
+      deliveryTime: roundOrder.deliveryTime,
+      items: newItems,
+      ...totals,
+      status: roundOrder.status,
+      paymentMethod: roundOrder.paymentMethod,
+      paymentStatus: roundOrder.paymentStatus,
+      paymentId: roundOrder.paymentId,
+      paymentSessions: roundOrder.paymentSessions || [],
+      notes: roundOrder.notes,
+      billedAt: roundOrder.createdAt,
+    });
+    if (io) io.to(req.restaurantId).emit("billCreated", bill);
+    return bill;
+  }
+
+  bill.items = [...(bill.items || []), ...newItems];
+  const totals = recalcBillTotalsFromItems(bill.items);
+  Object.assign(bill, totals);
+  bill.sessionRef = sessionRoot;
+  bill.orderRef = sessionRoot;
+  if (roundOrder.hasTakeaway) bill.hasTakeaway = true;
+  if (roundOrder.notes) {
+    bill.notes = bill.notes
+      ? `${bill.notes} | ${roundOrder.notes}`
+      : roundOrder.notes;
+  }
+  if (roundOrder.paymentSessions?.length) {
+    bill.paymentSessions = [...(bill.paymentSessions || []), ...roundOrder.paymentSessions];
+    const allPaid = bill.paymentSessions.every((s) =>
+      ["paid", "succeeded", "success"].includes((s.status || "").toLowerCase())
+    );
+    const anyPaid = bill.paymentSessions.some((s) =>
+      ["paid", "succeeded", "success"].includes((s.status || "").toLowerCase())
+    );
+    if (allPaid) bill.paymentStatus = "paid";
+    else if (anyPaid) bill.paymentStatus = "partially_paid";
+  }
+  await bill.save();
+  if (io) io.to(req.restaurantId).emit("billUpdated", bill);
+  return bill;
+}
+
+async function runPostCreateOrderSideEffects(req, createdOrder) {
+  const io = req.app.get("io");
+  if (io) {
+    io.to(req.restaurantId).emit("orderCreated", createdOrder);
+  }
+
+  const sessionRoot = createdOrder.sessionRef || createdOrder._id;
+  const batchTotal = createdOrder.items.reduce(
+    (sum, item) => sum + (item.price || 0) * (item.qty || 0),
+    0
+  );
+
+  (async () => {
+    try {
+      const totals = recalcBillTotalsFromItems(createdOrder.items);
+      const [newBill, kitchenBill] = await Promise.all([
+        (await Bill(req)).create({
+          orderRef: sessionRoot,
+          sessionRef: sessionRoot,
+          table: createdOrder.table,
+          hasTakeaway: createdOrder.hasTakeaway,
+          isTakeawayOrder: createdOrder.isTakeawayOrder,
+          tokenNumber: createdOrder.tokenNumber,
+          customerName: createdOrder.customerName,
+          customerAddress: createdOrder.customerAddress,
+          deliveryTime: createdOrder.deliveryTime,
+          items: createdOrder.items,
+          totalAmount: totals.totalAmount,
+          status: createdOrder.status,
+          paymentMethod: createdOrder.paymentMethod,
+          paymentStatus: createdOrder.paymentStatus,
+          paymentId: createdOrder.paymentId,
+          paymentSessions: createdOrder.paymentSessions,
+          notes: createdOrder.notes,
+          billDetails: totals.billDetails,
+          billedAt: createdOrder.createdAt,
+        }),
+        (await KitchenBill(req)).create({
+          orderRef: createdOrder._id,
+          batchNumber: 1,
+          table: createdOrder.table,
+          hasTakeaway: createdOrder.hasTakeaway,
+          isTakeawayOrder: createdOrder.isTakeawayOrder,
+          tokenNumber: createdOrder.tokenNumber,
+          customerName: createdOrder.customerName,
+          customerAddress: createdOrder.customerAddress,
+          deliveryTime: createdOrder.deliveryTime,
+          items: createdOrder.items,
+          batchTotal,
+          status: createdOrder.status,
+          notes: createdOrder.notes,
+        }),
+      ]);
+
+      if (io) {
+        if (newBill) io.to(req.restaurantId).emit("billCreated", newBill);
+        if (kitchenBill) io.to(req.restaurantId).emit("kitchenBillCreated", kitchenBill);
+      }
+    } catch (bgErr) {
+      console.error("Background bill/kitchen creation error:", bgErr);
+    }
+  })();
+}
+
+/** Add-more-items: new order ticket linked to session, not merged into parent. */
+async function createAddMoreRoundOrder(req, res, parentOrder, body) {
+  const {
+    orderItems,
+    totalAmount,
+    notes,
+    billDetails,
+    paymentMethod,
+    paymentStatus,
+    paymentId,
+    hasTakeaway,
+    customerName,
+    customerAddress,
+    deliveryTime,
+  } = body;
+
+  const sessionRef = parentOrder.sessionRef || parentOrder._id;
+  const tableNo = parentOrder.table;
+  const isTakeawayOrder = tableNo === "TAKEAWAY";
+
+  const orderData = {
+    items: mapIncomingOrderItems(orderItems),
+    table: tableNo,
+    sessionRef,
+    totalAmount,
+    notes: notes || "",
+    billDetails,
+    paymentMethod: paymentMethod || "cod",
+    paymentStatus: paymentStatus || "pending",
+    paymentId: paymentId || null,
+    status: "New",
+    customerName: customerName || parentOrder.customerName,
+    customerAddress: customerAddress || parentOrder.customerAddress,
+    deliveryTime: deliveryTime || parentOrder.deliveryTime,
+    hasTakeaway: hasTakeaway || parentOrder.hasTakeaway || false,
+    isTakeawayOrder,
+    tokenNumber: isTakeawayOrder ? parentOrder.tokenNumber : undefined,
+    isBillRequested: false,
+    paymentSessions: [
+      {
+        method: paymentMethod || "cod",
+        status: (paymentStatus || "pending").toLowerCase(),
+        amount: totalAmount,
+        id: paymentId || null,
+        addedAt: new Date(),
+      },
+    ],
+  };
+
+  await attachWaiterFromAuth(req, orderData);
+
+  const createdOrder = await new (await Order(req))(orderData).save();
+  res.status(201).json(createdOrder);
+
+  const io = req.app.get("io");
+  if (io) io.to(req.restaurantId).emit("orderCreated", createdOrder);
+
+  deductStockForOrderItems(req, createdOrder.items).catch((err) =>
+    console.error("Stock deduction error (add-more):", err)
+  );
+
+  const sessionRoot = sessionRef;
+  const batchTotal = createdOrder.items.reduce(
+    (sum, item) => sum + (item.price || 0) * (item.qty || 0),
+    0
+  );
+
+  (async () => {
+    try {
+      await mergeRoundIntoSessionBill(req, sessionRoot, createdOrder, io);
+      const kitchenBill = await (await KitchenBill(req)).create({
+        orderRef: createdOrder._id,
+        batchNumber: 1,
+        table: createdOrder.table,
+        hasTakeaway: createdOrder.hasTakeaway,
+        isTakeawayOrder: createdOrder.isTakeawayOrder,
+        tokenNumber: createdOrder.tokenNumber,
+        customerName: createdOrder.customerName,
+        customerAddress: createdOrder.customerAddress,
+        deliveryTime: createdOrder.deliveryTime,
+        items: createdOrder.items,
+        batchTotal,
+        status: createdOrder.status,
+        notes: createdOrder.notes,
+      });
+      if (io && kitchenBill) {
+        io.to(req.restaurantId).emit("kitchenBillCreated", kitchenBill);
+      }
+    } catch (bgErr) {
+      console.error("Add-more bill/kitchen side effect error:", bgErr);
+    }
+  })();
+}
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -53,18 +335,21 @@ const addOrderItems = async (req, res) => {
   const tableNo = table && table.trim() ? table : "TAKEAWAY";
   const isTakeawayOrder = tableNo === "TAKEAWAY";
 
-  // ONLY MERGE if existingOrderId is provided and it is still ACTIVE
-  let existingOrder = null;
+  // Add-more-items (mergeId): always a separate order ticket, linked by sessionRef
   if (existingOrderId) {
-    existingOrder = await (await Order(req)).findOne({
-      _id: existingOrderId,
-      status: { $in: ["Pending", "New", "Preparing", "Ready"] },
-    });
+    const parentOrder = await (await Order(req)).findById(existingOrderId);
+    if (
+      parentOrder &&
+      ACTIVE_ADD_MORE_PARENT_STATUSES.includes(parentOrder.status)
+    ) {
+      return createAddMoreRoundOrder(req, res, parentOrder, req.body);
+    }
   }
 
-  // automatic merge heuristics when no explicit id given
-  // skip these extra queries when existingOrderId was provided (even if not found)
-  if (!existingOrder && !existingOrderId) {
+  let existingOrder = null;
+
+  // automatic merge heuristics when no explicit add-more id given
+  if (!existingOrderId) {
     // run customerName and table lookups in parallel to save time
     const mergeQueries = [];
 
@@ -168,7 +453,8 @@ const addOrderItems = async (req, res) => {
 
         // Run bill update and kitchen bill creation in parallel
         const billUpdatePromise = (async () => {
-          const bill = await (await Bill(req)).findOne({ orderRef: updatedOrder._id });
+          const sessionRoot = updatedOrder.sessionRef || updatedOrder._id;
+          const bill = await findOpenSessionBill(req, sessionRoot);
           if (bill) {
             bill.items = updatedOrder.items;
             bill.totalAmount = updatedOrder.totalAmount;
@@ -230,6 +516,10 @@ const addOrderItems = async (req, res) => {
         })();
 
         await Promise.all([billUpdatePromise, kitchenBillPromise]);
+
+        await deductStockForOrderItems(req, newItems).catch((err) =>
+          console.error("Stock deduction error (merge):", err)
+        );
 
         if (io) {
           io.to(req.restaurantId).emit("orderUpdated", updatedOrder);
@@ -328,6 +618,10 @@ const addOrderItems = async (req, res) => {
 
   // RESPOND immediately so the client gets the token without waiting
   res.status(201).json(createdOrder);
+
+  deductStockForOrderItems(req, createdOrder.items).catch((err) =>
+    console.error("Stock deduction error:", err)
+  );
 
   // Create bill and kitchen bill in the background (fire-and-forget)
   const batchTotal = createdOrder.items.reduce((sum, item) => sum + (item.price * item.qty), 0);

@@ -13,6 +13,12 @@ const billSchema = mongoose.Schema(
       ref: "Order",
       required: true,
     },
+    /** Dine-in session root — one merged invoice per table visit (all add-more rounds). */
+    sessionRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      default: null,
+    },
     table: { type: String, required: true },
     // flag indicating if this dine-in bill also includes takeaway items
     hasTakeaway: { type: Boolean, default: false },
@@ -74,6 +80,7 @@ const billSchema = mongoose.Schema(
 billSchema.index({ billedAt: -1 });
 billSchema.index({ createdAt: -1 });
 billSchema.index({ orderRef: 1 });
+billSchema.index({ sessionRef: 1, status: 1 });
 // Open bills + recent closed (getBills default $or on status / billedAt)
 billSchema.index({ status: 1, billedAt: -1 });
 
