@@ -72,11 +72,52 @@ const TENANT_FEATURE_READ_DEFAULTS = Object.freeze({
  * @param {Record<string, unknown>|null|undefined} featuresDoc
  */
 function tenantFeaturesApiPayload(featuresDoc) {
-  const f = featuresDoc && typeof featuresDoc === "object" ? featuresDoc : {};
+  const raw =
+    featuresDoc && typeof featuresDoc === "object"
+      ? featuresDoc.toObject
+        ? featuresDoc.toObject()
+        : featuresDoc
+      : {};
   const out = {};
   for (const k of PLAN_FEATURE_KEYS) {
-    out[k] = f[k] ?? TENANT_FEATURE_READ_DEFAULTS[k];
+    out[k] =
+      typeof raw[k] === "boolean" ? raw[k] : TENANT_FEATURE_READ_DEFAULTS[k];
   }
+  if (typeof raw.inventory === "boolean") out.inventory = raw.inventory;
+  return out;
+}
+
+/** Full module snapshot for Super Admin PUT /features (every key explicit). */
+function normalizeTenantFeatureUpdate(incoming) {
+  const src = incoming && typeof incoming === "object" ? incoming : {};
+  const out = {};
+  for (const k of PLAN_FEATURE_KEYS) {
+    out[k] = Boolean(src[k]);
+  }
+  if (src.inventory !== undefined) out.inventory = Boolean(src.inventory);
+  return out;
+}
+
+/**
+ * Effective flags for admin/customer UI: restaurant overrides (Super Admin Module Access)
+ * win over the subscription plan template.
+ *
+ * @param {Record<string, unknown>|null|undefined} restaurantFeatures
+ * @param {Record<string, unknown>|null|undefined} planFeatures
+ */
+function resolveTenantEffectiveFeatures(restaurantFeatures, planFeatures) {
+  const r =
+    restaurantFeatures && typeof restaurantFeatures === "object" ? restaurantFeatures : {};
+  const p = planFeatures && typeof planFeatures === "object" ? planFeatures : {};
+  const out = {};
+  for (const k of PLAN_FEATURE_KEYS) {
+    if (typeof r[k] === "boolean") out[k] = r[k];
+    else if (typeof p[k] === "boolean") out[k] = p[k];
+    else out[k] = TENANT_FEATURE_READ_DEFAULTS[k];
+  }
+  if (typeof r.inventory === "boolean") out.inventory = r.inventory;
+  else if (typeof p.inventory === "boolean") out.inventory = p.inventory;
+  else out.inventory = PLAN_FEATURE_INVENTORY_DEFAULT;
   return out;
 }
 
@@ -87,4 +128,6 @@ module.exports = {
   TENANT_FEATURE_READ_DEFAULTS,
   normalizePlanFeaturesObject,
   tenantFeaturesApiPayload,
+  normalizeTenantFeatureUpdate,
+  resolveTenantEffectiveFeatures,
 };

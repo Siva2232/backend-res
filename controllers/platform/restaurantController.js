@@ -8,6 +8,8 @@ const { mergePlanFeaturesIntoRestaurant } = require("../../utils/planFeatureMerg
 const {
   PLAN_FEATURE_KEYS,
   tenantFeaturesApiPayload,
+  normalizeTenantFeatureUpdate,
+  resolveTenantEffectiveFeatures,
 } = require("../../constants/subscriptionFeatureFlags");
 const validator = require("validator");
 
@@ -117,57 +119,33 @@ const getRestaurantBranding = async (req, res) => {
         ? restaurant.subscriptionPlan.features
         : null;
 
-    const getEffectiveFeature = (key, fallback = false) => {
-      if (planFeatures && typeof planFeatures[key] === "boolean") return planFeatures[key];
-      if (restaurant.features && typeof restaurant.features[key] === "boolean") return restaurant.features[key];
-      return fallback;
+    // Customer / guest: plan template + per-tenant overrides.
+    const customerEffective = resolveTenantEffectiveFeatures(
+      restaurant.features,
+      planFeatures
+    );
+    const publicFeatureSubset = {
+      qrMenu: customerEffective.qrMenu,
+      onlineOrders: customerEffective.onlineOrders,
+      reservations: customerEffective.reservations,
+      customerPayLater: customerEffective.customerPayLater,
+      customerOnlinePayment: customerEffective.customerOnlinePayment,
     };
 
-    // Only include feature flags when the request carries a valid auth token
-    // (admin/kitchen/waiter panels need these for navigation gating)
-    // For customers, we ONLY expose public flags like qrMenu/onlineOrders
+    // Admin panels: saved `restaurant.features` only (Super Admin Module Access is source of truth).
+    const adminFeatures = tenantFeaturesApiPayload(restaurant.features);
+
     const jwt = require("jsonwebtoken");
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       try {
         jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
-        response.features = {
-          hr:           getEffectiveFeature("hr", false),
-          // inventory:    getEffectiveFeature("inventory", false),
-          reports:      getEffectiveFeature("reports", false),
-          qrMenu:       getEffectiveFeature("qrMenu", false),
-          onlineOrders: getEffectiveFeature("onlineOrders", false),
-          kitchenPanel: getEffectiveFeature("kitchenPanel", false),
-          waiterPanel:  getEffectiveFeature("waiterPanel", false),
-          waiterCall:   getEffectiveFeature("waiterCall", true),
-          billRequest:  getEffectiveFeature("billRequest", true),
-          accounting:   getEffectiveFeature("accounting", true),
-          hrStaff:      getEffectiveFeature("hrStaff", true),
-          hrAttendance: getEffectiveFeature("hrAttendance", true),
-          hrLeaves:     getEffectiveFeature("hrLeaves", true),
-          reservations: getEffectiveFeature("reservations", true),
-          customerPayLater: getEffectiveFeature("customerPayLater", true),
-          customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
-        };
+        response.features = adminFeatures;
       } catch (_) {
-        // invalid/expired token — treat as public request
-        response.features = {
-          qrMenu: getEffectiveFeature("qrMenu", false),
-          onlineOrders: getEffectiveFeature("onlineOrders", false),
-          reservations: getEffectiveFeature("reservations", true),
-          customerPayLater: getEffectiveFeature("customerPayLater", true),
-          customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
-        };
+        response.features = publicFeatureSubset;
       }
     } else {
-      // Public guest - only expose essential flags
-      response.features = {
-        qrMenu: getEffectiveFeature("qrMenu", false),
-        onlineOrders: getEffectiveFeature("onlineOrders", false),
-        reservations: getEffectiveFeature("reservations", true),
-        customerPayLater: getEffectiveFeature("customerPayLater", true),
-        customerOnlinePayment: getEffectiveFeature("customerOnlinePayment", true),
-      };
+      response.features = publicFeatureSubset;
     }
 
     res.json(response);
@@ -384,16 +362,20 @@ const updateFeatures = async (req, res) => {
       restaurant.features = {};
     }
 
-    // Merge incoming features (only update provided keys; keys aligned with plan merge list)
+    const snapshot = normalizeTenantFeatureUpdate(incoming);
     for (const key of PLAN_FEATURE_KEYS) {
-      if (incoming && incoming[key] !== undefined) {
-        restaurant.features[key] = Boolean(incoming[key]);
-      }
+      restaurant.features[key] = snapshot[key];
+    }
+    if (snapshot.inventory !== undefined) {
+      restaurant.features.inventory = snapshot.inventory;
     }
     restaurant.markModified("features");
     await restaurant.save();
-    clearTenantCache(restaurant.restaurantId); // Instantly propagate feature gating/navigation
-    res.json({ message: "Features updated", features: restaurant.features });
+    clearTenantCache(restaurant.restaurantId);
+    res.json({
+      message: "Features updated",
+      features: tenantFeaturesApiPayload(restaurant.features),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
