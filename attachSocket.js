@@ -16,9 +16,33 @@ function attachSocketIO(server, app) {
   });
 
   app.set("io", io);
+  // restaurantId -> connector socketId (POS "Print Connector")
+  const printConnectorMap = new Map();
+  app.set("printConnectorMap", printConnectorMap);
 
   io.on("connection", async (socket) => {
     console.log("socket client connected", socket.id);
+
+    // Print connector registers itself so backend can deliver jobs to it.
+    socket.on("registerPrintConnector", ({ restaurantId, token } = {}) => {
+      const expected = String(process.env.PRINT_CONNECTOR_TOKEN || "").trim();
+      if (!expected || !token || token !== expected) {
+        console.warn(`Socket ${socket.id}: invalid connector token`);
+        socket.emit("printConnectorRegistered", { ok: false, error: "Invalid token" });
+        return;
+      }
+      if (!restaurantId) {
+        socket.emit("printConnectorRegistered", { ok: false, error: "Missing restaurantId" });
+        return;
+      }
+      const rid = String(restaurantId).toUpperCase().trim();
+      printConnectorMap.set(rid, socket.id);
+      socket.data = socket.data || {};
+      socket.data.printConnectorRid = rid;
+      socket.join(`print:${rid}`);
+      console.log(`socket ${socket.id} registered as print connector for ${rid}`);
+      socket.emit("printConnectorRegistered", { ok: true, restaurantId: rid });
+    });
 
     socket.on("joinRoom", async ({ restaurantId, token } = {}) => {
       if (!restaurantId) return;
@@ -67,6 +91,11 @@ function attachSocketIO(server, app) {
     });
 
     socket.on("disconnect", () => {
+      const rid = socket?.data?.printConnectorRid;
+      if (rid && printConnectorMap.get(rid) === socket.id) {
+        printConnectorMap.delete(rid);
+        console.log(`print connector for ${rid} disconnected (${socket.id})`);
+      }
       console.log("socket client disconnected", socket.id);
     });
   });
