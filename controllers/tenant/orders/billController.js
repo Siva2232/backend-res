@@ -59,25 +59,39 @@ const getBills = async (req, res) => {
       filter.billedAt = { $gte: fromDate };
     }
 
-    const clampLimit = (n) => Math.min(15, Math.max(1, n));
+    const MAX_LIMIT = 50;
+    const DEFAULT_LIMIT = 20;
     const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
-    const limit = Number.isFinite(rawLimit) ? clampLimit(rawLimit) : 40;
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(MAX_LIMIT, Math.max(1, rawLimit))
+      : DEFAULT_LIMIT;
 
     const query = { ...filter };
-    if (!req.query.today && !req.query.from) {
+  // Invoice center: all open bills + anything billed today (full service day, not 6h window)
+    if (!req.query.today && !req.query.from && req.query.all !== "true") {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
       query.$or = [
-        { status: { $ne: "Closed" } }, 
-        { billedAt: { $gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } }
+        { status: { $ne: "Closed" } },
+        { billedAt: { $gte: startOfToday } },
       ];
     }
 
-    const bills = await (await Bill(req)).find(query)
-      .sort({ billedAt: -1, _id: -1 })
-      .limit(limit)
-      .select("-__v -paymentId -items.product -items.addedAt -items.isNewItem -items.image")
-      .lean();
+    const BillM = await Bill(req);
+    const [bills, openCount] = await Promise.all([
+      BillM.find(query)
+        .sort({ billedAt: -1, _id: -1 })
+        .limit(limit)
+        .select(
+          "-__v -paymentId -items.product -items.addedAt -items.isNewItem -items.image"
+        )
+        .lean(),
+      BillM.countDocuments({ status: { $ne: "Closed" } }),
+    ]);
 
-    res.set('Cache-Control', 'public, max-age=5, stale-while-revalidate=30');
+    res.set("Cache-Control", "private, no-store");
+    res.set("X-Bills-Open-Count", String(openCount));
+    res.set("X-Bills-Returned", String(bills.length));
     res.json(bills);
   } catch (error) {
     console.error("getBills error:", error);
