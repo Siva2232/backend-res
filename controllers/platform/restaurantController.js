@@ -585,6 +585,35 @@ const updateReceiptHeader = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Print connector online status for own restaurant (staff)
+// @route   GET /api/restaurants/:restaurantId/print-connector-status
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const getPrintConnectorStatus = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const getCount = req.app.get("getPrintConnectorCount");
+    const onlineCount =
+      typeof getCount === "function" ? getCount(restaurantId) : 0;
+
+    res.json({
+      online: onlineCount > 0,
+      onlineCount,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Get printer settings for own restaurant (staff)
 // @route   GET /api/restaurants/:restaurantId/printer-settings
 // @access  Private
@@ -960,6 +989,7 @@ module.exports = {
   updateRestaurant,
   updateOwnerEmail,
   updateReceiptHeader,
+  getPrintConnectorStatus,
   getPrinterSettings,
   updatePrinterSettings,
   updateBranding,

@@ -11,6 +11,7 @@ const {
   updateRestaurant,
   updateOwnerEmail,
   updateReceiptHeader,
+  getPrintConnectorStatus,
   getPrinterSettings,
   updatePrinterSettings,
   updateBranding,
@@ -37,6 +38,7 @@ router.post("/:restaurantId/renew", protect, renewSubscription);
 router.put("/:restaurantId/branding", protect, updateBranding);
 router.put("/:restaurantId/owner-email", protect, updateOwnerEmail);
 router.put("/:restaurantId/receipt-header", protect, updateReceiptHeader);
+router.get("/:restaurantId/print-connector-status", protect, getPrintConnectorStatus);
 router.get("/:restaurantId/printer-settings", protect, getPrinterSettings);
 router.put("/:restaurantId/printer-settings", protect, updatePrinterSettings);
 

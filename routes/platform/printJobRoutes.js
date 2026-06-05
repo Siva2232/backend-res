@@ -7,7 +7,11 @@ const {
   createPrintJob,
   ackPrintJob,
   listPrintJobs,
+  listPendingPrintJobs,
 } = require("../../controllers/printJobController");
+
+// Connector polls queued jobs (must be before /:id routes)
+router.get("/pending", protectConnector, listPendingPrintJobs);
 
 // Restaurant app (mobile/desktop) creates jobs via HTTPS
 router.route("/")

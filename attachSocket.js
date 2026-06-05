@@ -1,6 +1,11 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const User = require("./models/User");
+const {
+  addConnector,
+  removeConnector,
+  getConnectorCount,
+} = require("./utils/printConnectorRegistry");
 
 /**
  * Attach Socket.IO to the HTTP server and expose via app.set('io', io).
@@ -16,9 +21,7 @@ function attachSocketIO(server, app) {
   });
 
   app.set("io", io);
-  // restaurantId -> connector socketId (POS "Print Connector")
-  const printConnectorMap = new Map();
-  app.set("printConnectorMap", printConnectorMap);
+  app.set("getPrintConnectorCount", getConnectorCount);
 
   io.on("connection", async (socket) => {
     console.log("socket client connected", socket.id);
@@ -36,12 +39,15 @@ function attachSocketIO(server, app) {
         return;
       }
       const rid = String(restaurantId).toUpperCase().trim();
-      printConnectorMap.set(rid, socket.id);
+      addConnector(rid, socket.id);
       socket.data = socket.data || {};
       socket.data.printConnectorRid = rid;
       socket.join(`print:${rid}`);
-      console.log(`socket ${socket.id} registered as print connector for ${rid}`);
-      socket.emit("printConnectorRegistered", { ok: true, restaurantId: rid });
+      const onlineCount = getConnectorCount(rid);
+      console.log(
+        `socket ${socket.id} registered as print connector for ${rid} (${onlineCount} online)`
+      );
+      socket.emit("printConnectorRegistered", { ok: true, restaurantId: rid, onlineCount });
     });
 
     socket.on("joinRoom", async ({ restaurantId, token } = {}) => {
@@ -92,9 +98,11 @@ function attachSocketIO(server, app) {
 
     socket.on("disconnect", () => {
       const rid = socket?.data?.printConnectorRid;
-      if (rid && printConnectorMap.get(rid) === socket.id) {
-        printConnectorMap.delete(rid);
-        console.log(`print connector for ${rid} disconnected (${socket.id})`);
+      if (rid) {
+        removeConnector(rid, socket.id);
+        console.log(
+          `print connector for ${rid} disconnected (${socket.id}); ${getConnectorCount(rid)} remaining`
+        );
       }
       console.log("socket client disconnected", socket.id);
     });
