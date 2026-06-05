@@ -34,7 +34,7 @@ connectDB()
     attachSocketIO(server, app);
 
     const { initHRCronJobs, initSubscriptionCronJobs } = require("./services/cronService");
-    initHRCronJobs();
+    initHRCronJobs(app);
     initSubscriptionCronJobs(app);
 
     server.listen(PORT, () => {

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getAttendance, markAttendance, updateAttendance, deleteAttendance,
-  getAttendanceSummary, getMyAttendance,
+  getCalendarOverview, getAttendanceSummary, getMyAttendance,
   getAttendanceLocation, setAttendanceLocation, locationAttendance,
 } = require('../../../controllers/hrAttendanceController');
 const { protectHR, protectAny, anyAdmin } = require('../../../middleware/hrAuthMiddleware');
@@ -20,6 +20,7 @@ router.post('/location-config', protectAny, anyAdmin, setAttendanceLocation);
 // Admin/Manager
 router.get('/', protectAny, anyAdmin, getAttendance);
 router.post('/', protectAny, anyAdmin, markAttendance);
+router.get('/calendar-overview', protectAny, anyAdmin, getCalendarOverview);
 router.get('/summary/:staffId', protectAny, anyAdmin, getAttendanceSummary);
 router.put('/:id', protectAny, anyAdmin, updateAttendance);
 router.delete('/:id', protectAny, anyAdmin, deleteAttendance);

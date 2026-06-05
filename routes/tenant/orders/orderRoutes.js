@@ -11,6 +11,7 @@ const {
   getTokens,
   getOrderStats,
 } = require("../../../controllers/orderController");
+const { getOperationsInsights } = require("../../../controllers/orderAnalyticsController");
 const { protect, admin, adminOrKitchen, adminOrKitchenOrWaiter } = require("../../../middleware/authMiddleware");
 
 router
@@ -22,6 +23,7 @@ router.route("/tokens").get(protect, adminOrKitchenOrWaiter, getTokens);
 router.route("/reset-tokens").post(protect, admin, resetTokenCount);
 // Aggregated dashboard stats — single fast endpoint
 router.route("/stats").get(protect, admin, getOrderStats);
+router.route("/analytics/insights").get(protect, admin, getOperationsInsights);
 
 // dedicated manual-order endpoint, requires auth
 router.post("/manual", protect, admin, addManualOrder);

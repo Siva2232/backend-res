@@ -7,6 +7,7 @@ const HRStaff = async (req) => getModel('HRStaff', HRStaffModel2.schema, req.res
 const SettingsModel = require('../../../models/Settings');
 const Settings = async (req) => getModel('Settings', SettingsModel.schema, req.restaurantId);
 const { emitUpdate } = require('../../../utils/socketUtils');
+const { ensureAutoAbsentForDate, shouldAutoAbsentOnFetch } = require('../../../services/hr/autoAbsentAttendance');
 
 // Haversine distance in metres between two lat/lng points
 const haversineMetres = (lat1, lng1, lat2, lng2) => {
@@ -56,6 +57,11 @@ const getAttendance = async (req, res) => {
     if (date) {
       const { start, end } = dayRange(date);
       query.date = { $gte: start, $lte: end };
+      // Past days, or today after 10 PM IST: auto-mark absent if no check-in & no approved leave
+      if (shouldAutoAbsentOnFetch(date) && req.restaurantId) {
+        const io = req.app.get('io');
+        await ensureAutoAbsentForDate(req.restaurantId, date, { io });
+      }
     } else if (month && year) {
       const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
       const end = new Date(Date.UTC(Number(year), Number(month), 0, 23, 59, 59, 999));
@@ -150,6 +156,95 @@ const deleteAttendance = async (req, res) => {
     if (!record) return res.status(404).json({ message: 'Record not found' });
     emitUpdate(req, 'attendanceDelete', req.params.id);
     res.json({ message: 'Record deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Month calendar overview — daily status counts for team view
+// @route GET /api/hr/attendance/calendar-overview
+const getCalendarOverview = async (req, res) => {
+  try {
+    const m = Number(req.query.month) || new Date().getMonth() + 1;
+    const y = Number(req.query.year) || new Date().getFullYear();
+    const department = String(req.query.department || "").trim();
+
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+    const daysInMonth = end.getUTCDate();
+
+    const StaffM = await HRStaff(req);
+    let staffIds = null;
+    let staffCount = 0;
+
+    if (department) {
+      const staffList = await StaffM.find({ department, status: "active" }).select("_id").lean();
+      staffIds = staffList.map((s) => s._id);
+      staffCount = staffIds.length;
+    } else {
+      staffCount = await StaffM.countDocuments({ status: "active" });
+    }
+
+    const match = { date: { $gte: start, $lte: end } };
+    if (staffIds) match.staff = { $in: staffIds };
+
+    const dayMap = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      dayMap[dateStr] = { date: dateStr, present: 0, absent: 0, leave: 0, halfDay: 0, total: 0 };
+    }
+
+    const summary = { present: 0, absent: 0, leave: 0, halfDay: 0, totalWorkHours: 0 };
+
+    if (!department || staffIds.length > 0) {
+      const rows = await (await HRAttendance(req)).aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+              status: "$status",
+            },
+            count: { $sum: 1 },
+            workHours: { $sum: { $ifNull: ["$workHours", 0] } },
+          },
+        },
+      ]);
+
+      rows.forEach((row) => {
+        const date = row._id.date;
+        const status = row._id.status;
+        const bucket = dayMap[date];
+        if (!bucket) return;
+        const count = row.count || 0;
+        if (status === "present") {
+          bucket.present += count;
+          summary.present += count;
+        } else if (status === "absent") {
+          bucket.absent += count;
+          summary.absent += count;
+        } else if (status === "leave") {
+          bucket.leave += count;
+          summary.leave += count;
+        } else if (status === "half-day") {
+          bucket.halfDay += count;
+          summary.halfDay += count;
+        }
+        summary.totalWorkHours += row.workHours || 0;
+        bucket.total += count;
+      });
+    }
+
+    res.json({
+      month: m,
+      year: y,
+      staffCount,
+      summary: {
+        ...summary,
+        totalWorkHours: Number(summary.totalWorkHours.toFixed(1)),
+      },
+      daily: Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date)),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -346,6 +441,6 @@ const locationAttendance = async (req, res) => {
 
 module.exports = {
   getAttendance, markAttendance, updateAttendance, deleteAttendance,
-  getAttendanceSummary, getMyAttendance,
+  getCalendarOverview, getAttendanceSummary, getMyAttendance,
   getAttendanceLocation, setAttendanceLocation, locationAttendance,
 };

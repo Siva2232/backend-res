@@ -10,7 +10,9 @@ const { getModel } = require("../../utils/getModel");
  * Initialize all cron jobs for the HR module.
  * Call this once after the database is connected in server.js.
  */
-const initHRCronJobs = () => {
+const { runDailyAutoAbsentForAllTenants } = require('../hr/autoAbsentAttendance');
+
+const initHRCronJobs = (app) => {
   // ── 1st of every month at 00:05 → auto-generate payroll ──────────────────
   cron.schedule('5 0 1 * *', async () => {
     console.log('[HR Cron] Generating monthly payroll...');
@@ -115,7 +117,21 @@ const initHRCronJobs = () => {
     }
   }, { timezone: 'Asia/Kolkata' });
 
-  console.log('[HR Cron] Jobs initialized (payroll gen: 1st 00:05, emails: 1st 09:00)');
+  // ── Daily 00:30 IST → auto-mark absent (no check-in) / leave (approved) for yesterday ──
+  cron.schedule('30 0 * * *', async () => {
+    console.log('[HR Cron] Running daily auto-absent attendance...');
+    try {
+      const io = app && app.get ? app.get('io') : null;
+      const result = await runDailyAutoAbsentForAllTenants({ io });
+      console.log(
+        `[HR Cron] Auto-absent done for ${result.date}: ${result.totalAbsent} absent, ${result.totalLeave} leave synced`
+      );
+    } catch (err) {
+      console.error('[HR Cron] Auto-absent job failed:', err.message);
+    }
+  }, { timezone: 'Asia/Kolkata' });
+
+  console.log('[HR Cron] Jobs initialized (payroll: 1st 00:05, emails: 1st 09:00, auto-absent: daily 00:30 IST)');
 };
 
 // Express app ref so cron jobs can emit Socket.IO events (set by initSubscriptionCronJobs).
