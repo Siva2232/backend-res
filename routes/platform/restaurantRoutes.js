@@ -11,6 +11,8 @@ const {
   updateRestaurant,
   updateOwnerEmail,
   updateReceiptHeader,
+  getPrinterSettings,
+  updatePrinterSettings,
   updateBranding,
   updateFeatures,
   assignPlan,
@@ -35,6 +37,8 @@ router.post("/:restaurantId/renew", protect, renewSubscription);
 router.put("/:restaurantId/branding", protect, updateBranding);
 router.put("/:restaurantId/owner-email", protect, updateOwnerEmail);
 router.put("/:restaurantId/receipt-header", protect, updateReceiptHeader);
+router.get("/:restaurantId/printer-settings", protect, getPrinterSettings);
+router.put("/:restaurantId/printer-settings", protect, updatePrinterSettings);
 
 // ── Single-segment param routes (must come last) ──────────────────────────
 router.get("/:restaurantId",    protect, superAdminOnly, getRestaurantById);

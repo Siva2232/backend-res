@@ -585,6 +585,105 @@ const updateReceiptHeader = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get printer settings for own restaurant (staff)
+// @route   GET /api/restaurants/:restaurantId/printer-settings
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const getPrinterSettings = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const restaurant = await Restaurant.findOne({ restaurantId }).select("printerSettings");
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    const ps = restaurant.printerSettings || {};
+    res.json({
+      invoice: {
+        host: ps.invoice?.host || "",
+        port: Number(ps.invoice?.port) || 9100,
+      },
+      kitchen: {
+        host: ps.kitchen?.host || "",
+        port: Number(ps.kitchen?.port) || 9100,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update printer settings for own restaurant (Admin)
+// @route   PUT /api/restaurants/:restaurantId/printer-settings
+// @access  Private/Admin
+// ─────────────────────────────────────────────────────────────────────────────
+const updatePrinterSettings = async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || "").toUpperCase().trim();
+    if (!restaurantId) return res.status(400).json({ message: "restaurantId is required" });
+
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const userRid = String(req.user?.restaurantId || "").toUpperCase().trim();
+    const isAdmin = req.user?.isAdmin || req.user?.role === "admin";
+    if (!isSuperAdmin && (!userRid || userRid !== restaurantId || !isAdmin)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const { invoice, kitchen } = req.body || {};
+    const restaurant = await Restaurant.findOne({ restaurantId });
+    if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+    if (!restaurant.printerSettings) restaurant.printerSettings = {};
+    if (!restaurant.printerSettings.invoice) restaurant.printerSettings.invoice = {};
+    if (!restaurant.printerSettings.kitchen) restaurant.printerSettings.kitchen = {};
+
+    if (invoice !== undefined) {
+      if (invoice.host !== undefined) {
+        restaurant.printerSettings.invoice.host = String(invoice.host).trim();
+      }
+      if (invoice.port !== undefined) {
+        restaurant.printerSettings.invoice.port = Number(invoice.port) || 9100;
+      }
+    }
+    if (kitchen !== undefined) {
+      if (kitchen.host !== undefined) {
+        restaurant.printerSettings.kitchen.host = String(kitchen.host).trim();
+      }
+      if (kitchen.port !== undefined) {
+        restaurant.printerSettings.kitchen.port = Number(kitchen.port) || 9100;
+      }
+    }
+
+    await restaurant.save();
+    clearTenantCache(restaurant.restaurantId);
+
+    const ps = restaurant.printerSettings;
+    res.json({
+      message: "Printer settings updated",
+      printerSettings: {
+        invoice: {
+          host: ps.invoice?.host || "",
+          port: Number(ps.invoice?.port) || 9100,
+        },
+        kitchen: {
+          host: ps.kitchen?.host || "",
+          port: Number(ps.kitchen?.port) || 9100,
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Delete restaurant  (Super Admin)
 // @route   DELETE /api/restaurants/:restaurantId
 // @access  Private/SuperAdmin
@@ -861,6 +960,8 @@ module.exports = {
   updateRestaurant,
   updateOwnerEmail,
   updateReceiptHeader,
+  getPrinterSettings,
+  updatePrinterSettings,
   updateBranding,
   updateFeatures,
   assignPlan,

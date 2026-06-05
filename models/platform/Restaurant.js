@@ -81,6 +81,18 @@ const restaurantSchema = new mongoose.Schema(
       gstNumber:        { type: String, default: "" },
     },
 
+    /** Network thermal printer IPs (admin-managed; synced to all staff devices) */
+    printerSettings: {
+      invoice: {
+        host: { type: String, default: "" },
+        port: { type: Number, default: 9100 },
+      },
+      kitchen: {
+        host: { type: String, default: "" },
+        port: { type: Number, default: 9100 },
+      },
+    },
+
     // Expiry reminder tracking (so we don't spam)
     reminderSent5Day:   { type: Boolean, default: false },
     reminderSent3Days:  { type: Boolean, default: false },
