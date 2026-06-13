@@ -3,23 +3,28 @@ const router = express.Router();
 
 const { protect } = require("../../middleware/authMiddleware");
 const { protectConnector } = require("../../middleware/connectorAuthMiddleware");
+const { protectConnectorJwt } = require("../../middleware/connectorJwtMiddleware");
 const {
   createPrintJob,
   ackPrintJob,
   listPrintJobs,
   listPendingPrintJobs,
-} = require("../../controllers/printJobController");
+} = require("../../controllers/platform/printJobController");
 
-// Connector polls queued jobs (must be before /:id routes)
-router.get("/pending", protectConnector, listPendingPrintJobs);
+function protectConnectorAny(req, res, next) {
+  const auth = req.headers.authorization || "";
+  if (auth.startsWith("Bearer ")) {
+    return protectConnectorJwt(req, res, next);
+  }
+  return protectConnector(req, res, next);
+}
 
-// Restaurant app (mobile/desktop) creates jobs via HTTPS
+router.get("/pending", protectConnectorAny, listPendingPrintJobs);
+
 router.route("/")
   .post(protect, createPrintJob)
   .get(protect, listPrintJobs);
 
-// Connector acks outcomes
-router.post("/:id/ack", protectConnector, ackPrintJob);
+router.post("/:id/ack", protectConnectorAny, ackPrintJob);
 
 module.exports = router;
-

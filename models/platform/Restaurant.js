@@ -91,6 +91,14 @@ const restaurantSchema = new mongoose.Schema(
         host: { type: String, default: "" },
         port: { type: Number, default: 9100 },
       },
+      bar: {
+        host: { type: String, default: "" },
+        port: { type: Number, default: 9100 },
+      },
+      delivery: {
+        host: { type: String, default: "" },
+        port: { type: Number, default: 9100 },
+      },
     },
 
     // Expiry reminder tracking (so we don't spam)

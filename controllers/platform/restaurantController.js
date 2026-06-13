@@ -601,12 +601,27 @@ const getPrintConnectorStatus = async (req, res) => {
     }
 
     const getCount = req.app.get("getPrintConnectorCount");
-    const onlineCount =
-      typeof getCount === "function" ? getCount(restaurantId) : 0;
+    const legacyCount = typeof getCount === "function" ? getCount(restaurantId) : 0;
+
+    const ConnectorDevice = require("../../models/ConnectorDevice");
+    const staleBefore = new Date(Date.now() - 60 * 1000);
+    await ConnectorDevice.updateMany(
+      { restaurantId, isRevoked: false, lastHeartbeatAt: { $lt: staleBefore } },
+      { $set: { isOnline: false } }
+    );
+    const jwtOnline = await ConnectorDevice.countDocuments({
+      restaurantId,
+      isRevoked: false,
+      isOnline: true,
+    });
+
+    const onlineCount = legacyCount + jwtOnline;
 
     res.json({
       online: onlineCount > 0,
       onlineCount,
+      jwtOnlineCount: jwtOnline,
+      legacyOnlineCount: legacyCount,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -642,6 +657,14 @@ const getPrinterSettings = async (req, res) => {
         host: ps.kitchen?.host || "",
         port: Number(ps.kitchen?.port) || 9100,
       },
+      bar: {
+        host: ps.bar?.host || "",
+        port: Number(ps.bar?.port) || 9100,
+      },
+      delivery: {
+        host: ps.delivery?.host || "",
+        port: Number(ps.delivery?.port) || 9100,
+      },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -665,30 +688,30 @@ const updatePrinterSettings = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    const { invoice, kitchen } = req.body || {};
+    const { invoice, kitchen, bar, delivery } = req.body || {};
     const restaurant = await Restaurant.findOne({ restaurantId });
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     if (!restaurant.printerSettings) restaurant.printerSettings = {};
     if (!restaurant.printerSettings.invoice) restaurant.printerSettings.invoice = {};
     if (!restaurant.printerSettings.kitchen) restaurant.printerSettings.kitchen = {};
+    if (!restaurant.printerSettings.bar) restaurant.printerSettings.bar = {};
+    if (!restaurant.printerSettings.delivery) restaurant.printerSettings.delivery = {};
 
-    if (invoice !== undefined) {
-      if (invoice.host !== undefined) {
-        restaurant.printerSettings.invoice.host = String(invoice.host).trim();
+    const applyPrinter = (target, data) => {
+      if (data === undefined) return;
+      if (data.host !== undefined) {
+        target.host = String(data.host).trim();
       }
-      if (invoice.port !== undefined) {
-        restaurant.printerSettings.invoice.port = Number(invoice.port) || 9100;
+      if (data.port !== undefined) {
+        target.port = Number(data.port) || 9100;
       }
-    }
-    if (kitchen !== undefined) {
-      if (kitchen.host !== undefined) {
-        restaurant.printerSettings.kitchen.host = String(kitchen.host).trim();
-      }
-      if (kitchen.port !== undefined) {
-        restaurant.printerSettings.kitchen.port = Number(kitchen.port) || 9100;
-      }
-    }
+    };
+
+    applyPrinter(restaurant.printerSettings.invoice, invoice);
+    applyPrinter(restaurant.printerSettings.kitchen, kitchen);
+    applyPrinter(restaurant.printerSettings.bar, bar);
+    applyPrinter(restaurant.printerSettings.delivery, delivery);
 
     await restaurant.save();
     clearTenantCache(restaurant.restaurantId);
@@ -704,6 +727,14 @@ const updatePrinterSettings = async (req, res) => {
         kitchen: {
           host: ps.kitchen?.host || "",
           port: Number(ps.kitchen?.port) || 9100,
+        },
+        bar: {
+          host: ps.bar?.host || "",
+          port: Number(ps.bar?.port) || 9100,
+        },
+        delivery: {
+          host: ps.delivery?.host || "",
+          port: Number(ps.delivery?.port) || 9100,
         },
       },
     });

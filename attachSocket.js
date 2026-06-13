@@ -26,6 +26,64 @@ function attachSocketIO(server, app) {
   io.on("connection", async (socket) => {
     console.log("socket client connected", socket.id);
 
+    // RestoPrint v2: JWT-based connector joins restaurant room
+    socket.on("joinRestaurant", async ({ restaurantId, connectorId, token } = {}) => {
+      try {
+        if (!restaurantId || !connectorId || !token) {
+          socket.emit("restaurantJoined", { ok: false, error: "Missing credentials" });
+          return;
+        }
+
+        const { verifyConnectorToken } = require("./middleware/connectorJwtMiddleware");
+        const ConnectorDevice = require("./models/ConnectorDevice");
+
+        const decoded = verifyConnectorToken(token);
+        const rid = String(restaurantId).toUpperCase().trim();
+        const cid = String(connectorId).toUpperCase().trim();
+
+        if (decoded.restaurantId !== rid || decoded.connectorId !== cid) {
+          socket.emit("restaurantJoined", { ok: false, error: "Credential mismatch" });
+          return;
+        }
+
+        const connector = await ConnectorDevice.findOne({
+          connectorId: cid,
+          restaurantId: rid,
+          isRevoked: false,
+        });
+
+        if (!connector) {
+          socket.emit("restaurantJoined", { ok: false, error: "Connector revoked or not found" });
+          return;
+        }
+
+        addConnector(rid, socket.id);
+        socket.data = socket.data || {};
+        socket.data.printConnectorRid = rid;
+        socket.data.connectorId = cid;
+        socket.join(`print:${rid}`);
+
+        connector.socketId = socket.id;
+        connector.isOnline = true;
+        connector.lastHeartbeatAt = new Date();
+        await connector.save();
+
+        const onlineCount = getConnectorCount(rid);
+        console.log(
+          `socket ${socket.id} joined restaurant ${rid} as ${cid} (${onlineCount} online)`
+        );
+        socket.emit("restaurantJoined", {
+          ok: true,
+          restaurantId: rid,
+          connectorId: cid,
+          onlineCount,
+        });
+      } catch (err) {
+        console.warn(`Socket ${socket.id}: joinRestaurant failed`, err.message);
+        socket.emit("restaurantJoined", { ok: false, error: err.message || "Join failed" });
+      }
+    });
+
     // Print connector registers itself so backend can deliver jobs to it.
     socket.on("registerPrintConnector", ({ restaurantId, token } = {}) => {
       const expected = String(process.env.PRINT_CONNECTOR_TOKEN || "").trim();
@@ -96,8 +154,20 @@ function attachSocketIO(server, app) {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const rid = socket?.data?.printConnectorRid;
+      const connectorId = socket?.data?.connectorId;
+
+      if (connectorId) {
+        try {
+          const ConnectorDevice = require("./models/ConnectorDevice");
+          await ConnectorDevice.updateOne(
+            { connectorId, restaurantId: rid },
+            { $set: { isOnline: false, socketId: null } }
+          );
+        } catch (_) {}
+      }
+
       if (rid) {
         removeConnector(rid, socket.id);
         console.log(
