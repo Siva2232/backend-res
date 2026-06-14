@@ -362,6 +362,29 @@ async function updateConnectorPrinterSettings(req, res) {
 
     await connector.save();
 
+    try {
+      const Restaurant = require("../../models/Restaurant");
+      const rid = String(connector.restaurantId || "").toUpperCase().trim();
+      const restaurant = await Restaurant.findOne({ restaurantId: rid });
+      if (restaurant) {
+        if (!restaurant.printerSettings) restaurant.printerSettings = {};
+        const mirror = (key, val) => {
+          if (!val || typeof val !== "object" || !val.host) return;
+          restaurant.printerSettings[key] = {
+            host: String(val.host).trim(),
+            port: Number(val.port) || 9100,
+          };
+        };
+        mirror("invoice", invoice);
+        mirror("kitchen", kitchen);
+        mirror("bar", bar);
+        mirror("delivery", delivery);
+        await restaurant.save();
+      }
+    } catch (mirrorErr) {
+      console.warn("[updateConnectorPrinterSettings] restaurant mirror failed", mirrorErr.message);
+    }
+
     res.json({ ok: true, printerSettings: formatPrinterSettings(connector.printerSettings) });
   } catch (error) {
     console.error("[updateConnectorPrinterSettings]", error);

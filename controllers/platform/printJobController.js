@@ -59,6 +59,32 @@ async function resolvePrinterFromRestaurant(restaurantId, printerType) {
   };
 }
 
+async function resolvePrinterFromConnectors(restaurantId, printerType) {
+  const ConnectorDevice = require("../../models/ConnectorDevice");
+  const rid = upperRid(restaurantId);
+  const key = printerType === "invoice" ? "invoice" : printerType;
+
+  const connectors = await ConnectorDevice.find({
+    restaurantId: rid,
+    isRevoked: false,
+    isOnline: true,
+  })
+    .select("printerSettings")
+    .lean();
+
+  for (const connector of connectors) {
+    const ps = connector.printerSettings?.[key];
+    if (ps?.host) {
+      return {
+        host: String(ps.host).trim(),
+        port: Number(ps.port) || 9100,
+      };
+    }
+  }
+
+  return null;
+}
+
 async function tryDeliverJob(job, req) {
   const io = req.app.get("io");
   const restaurantId = upperRid(job.restaurantId);
@@ -104,14 +130,17 @@ async function createPrintJob(req, res) {
 
     if (jobPayload && typeof jobPayload === "object") {
       if (!host) {
-        const resolved = await resolvePrinterFromRestaurant(restaurantId, resolvedPrinterType);
-        if (!resolved?.host) {
-          return res.status(400).json({
-            message: `${resolvedPrinterType} printer IP not configured. Set it in Admin Profile.`,
-          });
+        const resolved =
+          (await resolvePrinterFromRestaurant(restaurantId, resolvedPrinterType)) ||
+          (await resolvePrinterFromConnectors(restaurantId, resolvedPrinterType));
+        if (resolved?.host) {
+          host = resolved.host;
+          port = resolved.port;
+        } else {
+          // Connector tablet uses device-local printer IPs from Printer Settings.
+          host = "";
+          port = 9100;
         }
-        host = resolved.host;
-        port = resolved.port;
       }
     } else {
       if (!host) {
