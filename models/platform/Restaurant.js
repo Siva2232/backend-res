@@ -50,12 +50,20 @@ const restaurantSchema = new mongoose.Schema(
       customerOnlinePayment: { type: Boolean, default: true },
     },
 
+    // Per-restaurant payment gateway (customer checkout — NOT platform .env)
+    paymentSettings: {
+      razorpayEnabled: { type: Boolean, default: false },
+      razorpayKeyId: { type: String, default: "" },
+      razorpayKeySecret: { type: String, default: "" },
+      razorpayWebhookSecret: { type: String, default: "" },
+    },
+
     // Subscription
     subscriptionPlan:   { type: mongoose.Schema.Types.ObjectId, ref: "SubscriptionPlan", default: null },
     subscriptionStatus: { type: String, enum: ["active", "expired", "trial", "suspended"], default: "trial" },
     subscriptionExpiry: { type: Date, default: null },
 
-    // Payment history
+    // Payment history (subscription payments to platform)
     paymentHistory: [
       {
         amount:    { type: Number, required: true },
@@ -63,6 +71,9 @@ const restaurantSchema = new mongoose.Schema(
         method:    { type: String, default: "manual" },
         reference: { type: String, default: "" },
         plan:      { type: mongoose.Schema.Types.ObjectId, ref: "SubscriptionPlan" },
+        planName:  { type: String, default: "" },
+        razorpayOrderId: { type: String, default: "" },
+        razorpayPaymentId: { type: String, default: "" },
       },
     ],
 

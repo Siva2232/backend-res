@@ -256,6 +256,34 @@ Standard CRUD endpoints. All require `restaurantId` via middleware.
 | PUT | `/api/restaurants/:id/branding` | Admin | Update branding |
 | PUT | `/api/restaurants/:id/features` | SuperAdmin | Toggle feature flags |
 
+### Payments (Razorpay)
+
+Two separate Razorpay accounts:
+
+| Flow | Credentials | Routes |
+|:---|:---|:---|
+| SaaS subscription (restaurant owner → platform) | `.env` `RAZORPAY_PLATFORM_KEY_ID` / `RAZORPAY_PLATFORM_KEY_SECRET` | `POST /api/subscriptions/create-order`, `/verify`, `/activate` |
+| Customer online checkout (guest → restaurant) | `Restaurant.paymentSettings` (encrypted secrets) | `GET/PUT /api/payments/config`, `POST /api/payments/create-order`, `/verify` |
+
+**Per-restaurant payment settings** (stored on `Restaurant` in platform DB):
+
+```js
+paymentSettings: {
+  razorpayEnabled: Boolean,
+  razorpayKeyId: String,
+  razorpayKeySecret: String,      // AES-256-GCM encrypted (ENCRYPTION_KEY)
+  razorpayWebhookSecret: String,  // encrypted
+}
+```
+
+**Webhook URL** (each restaurant configures in Razorpay dashboard):
+
+```
+POST {API_PUBLIC_URL}/api/payments/webhook?restaurantId=RESTO001
+```
+
+The `restaurantId` query param is required so `tenantMiddleware` can load the correct restaurant webhook secret. Register the webhook route **before** `express.json()` (see `http/webhookRawBody.js`).
+
 ---
 
 ## Socket.io — Real-Time Events

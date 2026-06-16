@@ -1,10 +1,28 @@
 const express = require("express");
 const router = express.Router();
-const { authUser, registerUser, getUsers, updateUser, deleteUser, createSupportUser, getSupportUsers, getProfile, updateProfile, changePassword } = require("../../controllers/authController");
+const {
+  authUser,
+  registerUser,
+  getUsers,
+  updateUser,
+  deleteUser,
+  createSupportUser,
+  getSupportUsers,
+  getProfile,
+  updateProfile,
+  changePassword,
+  sendForgotPasswordOtp,
+  resetForgotPassword,
+} = require("../../controllers/authController");
 const { protect, admin } = require("../../middleware/authMiddleware");
+const { createForgotPasswordOtpLimiter } = require("../../config/apiRateLimit");
+
+const forgotPasswordOtpLimiter = createForgotPasswordOtpLimiter();
 
 router.post("/login", authUser);
 router.post("/register", registerUser);
+router.post("/forgot-password/send-otp", forgotPasswordOtpLimiter, sendForgotPasswordOtp);
+router.post("/forgot-password/reset", forgotPasswordOtpLimiter, resetForgotPassword);
 
 // Profile routes (Any role)
 router.get("/profile", protect, getProfile);

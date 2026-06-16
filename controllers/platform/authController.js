@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../../models/User");
+const { requestOtp, resetPassword } = require("../../services/auth/passwordResetService");
 
 const generateToken = (id, restaurantId, role) => {
   return jwt.sign({ id, restaurantId: restaurantId || null, role: role || "admin" }, process.env.JWT_SECRET, {
@@ -320,6 +321,35 @@ const changePassword = async (req, res) => {
   }
 };
 
+// @desc    Send password reset OTP to registered owner email
+// @route   POST /api/auth/forgot-password/send-otp
+// @access  Public
+const sendForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const result = await requestOtp(email);
+    res.json({ message: result.message });
+  } catch (error) {
+    console.error("sendForgotPasswordOtp error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Reset owner password with email OTP
+// @route   POST /api/auth/forgot-password/reset
+// @access  Public
+const resetForgotPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const result = await resetPassword(email, otp, newPassword);
+    res.json(result);
+  } catch (error) {
+    const status = error.statusCode || 500;
+    if (status >= 500) console.error("resetForgotPassword error:", error);
+    res.status(status).json({ message: error.message || "Server error" });
+  }
+};
+
 module.exports = { 
   authUser, 
   registerUser, 
@@ -330,6 +360,8 @@ module.exports = {
   deleteUser,
   getProfile,
   updateProfile,
-  changePassword
+  changePassword,
+  sendForgotPasswordOtp,
+  resetForgotPassword,
 };
 

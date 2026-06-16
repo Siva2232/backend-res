@@ -165,4 +165,68 @@ const sendPayslipEmail = async (toEmail, staffName, payroll, pdfBuffer) => {
   }
 };
 
-module.exports = { sendPayslipEmail };
+const sendGenericEmail = async (toEmail, subject, html) => {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn("[EmailService] SMTP credentials not configured. Skipping email.");
+    return;
+  }
+
+  const companyName = process.env.COMPANY_NAME || "Restaurant Management System";
+  const companyEmail = process.env.COMPANY_EMAIL || process.env.SMTP_USER;
+
+  const mailOptions = {
+    from: `"${companyName}" <${companyEmail}>`,
+    to: toEmail,
+    subject,
+    html,
+  };
+
+  try {
+    const t = await getTransporter();
+    await t.sendMail(mailOptions);
+    console.log(`[EmailService] Email sent to ${toEmail}: ${subject}`);
+  } catch (error) {
+    console.error(`[EmailService] Failed to send email to ${toEmail}:`, error.message);
+    transporter = null;
+    throw error;
+  }
+};
+
+const sendPasswordResetOtpEmail = async (toEmail, otp, restaurantName) => {
+  const companyName = process.env.COMPANY_NAME || "Restaurant Management System";
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;margin:0;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg,#312e81,#4f46e5);color:#fff;padding:28px 32px;">
+      <h1 style="margin:0;font-size:20px;">Password Reset</h1>
+      <p style="margin:8px 0 0;opacity:0.9;font-size:14px;">${companyName}</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="color:#334155;font-size:15px;line-height:1.6;">
+        Use this one-time code to reset the admin password for <strong>${restaurantName}</strong>:
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <span style="display:inline-block;font-size:32px;font-weight:800;letter-spacing:0.35em;color:#4f46e5;background:#eef2ff;padding:16px 28px;border-radius:12px;">
+          ${otp}
+        </span>
+      </div>
+      <p style="color:#64748b;font-size:13px;">This code expires in <strong>10 minutes</strong>. If you did not request a reset, ignore this email.</p>
+    </div>
+    <div style="background:#f8fafc;padding:16px 32px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+      Automated message — do not reply.
+    </div>
+  </div>
+</body>
+</html>`;
+
+  await sendGenericEmail(
+    toEmail,
+    `Your password reset code — ${companyName}`,
+    html
+  );
+};
+
+module.exports = { sendPayslipEmail, sendGenericEmail, sendPasswordResetOtpEmail };

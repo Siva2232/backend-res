@@ -20,4 +20,15 @@ function createApiLimiter() {
   });
 }
 
-module.exports = { createApiLimiter };
+/** Stricter limiter for forgot-password OTP requests */
+function createForgotPasswordOtpLimiter() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many OTP requests. Please try again in 15 minutes." },
+  });
+}
+
+module.exports = { createApiLimiter, createForgotPasswordOtpLimiter };

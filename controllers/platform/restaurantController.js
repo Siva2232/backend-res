@@ -31,6 +31,61 @@ function addTrialDaysFrom(baseDate = new Date()) {
   return d;
 }
 
+/** Keep Restaurant owner fields and the admin User login account in sync. */
+async function syncOwnerAdminUser({ restaurant, ownerEmail, ownerName, ownerPassword }) {
+  const restaurantId = restaurant.restaurantId;
+  const normalizedEmail =
+    ownerEmail != null && String(ownerEmail).trim()
+      ? String(ownerEmail).trim().toLowerCase()
+      : null;
+
+  const adminUser = await User.findOne({
+    restaurantId,
+    $or: [{ isAdmin: true }, { role: "admin" }],
+  });
+
+  if (!adminUser) {
+    if (normalizedEmail && ownerPassword && String(ownerPassword).length >= 6) {
+      const existing = await User.findOne({ email: normalizedEmail });
+      if (existing) {
+        const err = new Error(`A user with email '${normalizedEmail}' already exists`);
+        err.statusCode = 400;
+        throw err;
+      }
+      await User.create({
+        name: ownerName || `${restaurant.name} Admin`,
+        email: normalizedEmail,
+        password: ownerPassword,
+        role: "admin",
+        isAdmin: true,
+        restaurantId,
+      });
+    }
+    return null;
+  }
+
+  if (ownerName != null && String(ownerName).trim()) {
+    adminUser.name = String(ownerName).trim();
+  }
+
+  if (normalizedEmail && adminUser.email !== normalizedEmail) {
+    const emailTaken = await User.findOne({ email: normalizedEmail, _id: { $ne: adminUser._id } });
+    if (emailTaken) {
+      const err = new Error(`A user with email '${normalizedEmail}' already exists`);
+      err.statusCode = 400;
+      throw err;
+    }
+    adminUser.email = normalizedEmail;
+  }
+
+  if (ownerPassword && String(ownerPassword).length >= 6) {
+    adminUser.password = ownerPassword;
+  }
+
+  await adminUser.save();
+  return adminUser;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: auto-generate next restaurantId (RESTO001, RESTO002 …)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,8 +267,8 @@ const createRestaurant = async (req, res) => {
       subscriptionPlan: subscriptionPlan || null,
       subscriptionStatus: subscriptionStatus || "trial",
       subscriptionExpiry: subscriptionExpiry || null,
-      ownerName:  ownerName  || "",
-      ownerEmail: ownerEmail || "",
+      ownerName:  ownerName  ? String(ownerName).trim() : "",
+      ownerEmail: ownerEmail ? String(ownerEmail).trim().toLowerCase() : "",
       ownerPhone: ownerPhone || "",
       address:    address    || "",
     });
@@ -244,6 +299,15 @@ const createRestaurant = async (req, res) => {
 
     await restaurant.save();
     clearTenantCache(restaurant.restaurantId);
+
+    await SuperAdminNotification.create({
+      type: "new_restaurant",
+      title: "New restaurant deployed",
+      message: `${restaurant.name} (${restaurant.restaurantId}) joined the platform.`,
+      restaurantId: restaurant.restaurantId,
+      restaurantName: restaurant.name,
+      meta: { subscriptionStatus: restaurant.subscriptionStatus },
+    });
 
     // Create the owner admin User account if email + password provided
     // NOTE: Do NOT pre-hash the password — User model's pre-save hook handles bcrypt automatically
@@ -471,11 +535,22 @@ const updateRestaurant = async (req, res) => {
     });
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
-    const fields = ["name", "ownerEmail", "ownerPhone", "address", "isActive", "subscriptionStatus", "subscriptionExpiry"];
+    const fields = ["name", "ownerPhone", "address", "isActive", "subscriptionStatus", "subscriptionExpiry"];
     for (const f of fields) {
       if (req.body[f] !== undefined) {
         restaurant[f] = req.body[f];
       }
+    }
+
+    if (req.body.ownerName !== undefined) {
+      restaurant.ownerName = String(req.body.ownerName || "").trim();
+    }
+    if (req.body.ownerEmail !== undefined) {
+      const raw = String(req.body.ownerEmail || "").trim();
+      if (raw && !validator.isEmail(raw)) {
+        return res.status(400).json({ message: "Invalid owner email address" });
+      }
+      restaurant.ownerEmail = raw ? raw.toLowerCase() : "";
     }
 
     // Auto-set status to 'active' if a plan is assigned and status is still 'trial'
@@ -489,9 +564,18 @@ const updateRestaurant = async (req, res) => {
     }
 
     await restaurant.save();
-    clearTenantCache(restaurant.restaurantId); // Instantly propagate status changes
+
+    await syncOwnerAdminUser({
+      restaurant,
+      ownerEmail: restaurant.ownerEmail,
+      ownerName: restaurant.ownerName,
+      ownerPassword: req.body.ownerPassword,
+    });
+
+    clearTenantCache(restaurant.restaurantId);
     res.json(restaurant);
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
     res.status(500).json({ message: err.message });
   }
 };
@@ -523,11 +607,22 @@ const updateOwnerEmail = async (req, res) => {
     if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
     restaurant.ownerEmail = ownerEmail;
+    if (req.body.ownerName !== undefined) {
+      restaurant.ownerName = String(req.body.ownerName || "").trim();
+    }
     await restaurant.save();
     clearTenantCache(restaurant.restaurantId);
 
+    await syncOwnerAdminUser({
+      restaurant,
+      ownerEmail: restaurant.ownerEmail,
+      ownerName: restaurant.ownerName,
+      ownerPassword: req.body.ownerPassword,
+    });
+
     res.json({ message: "Owner email updated", ownerEmail: restaurant.ownerEmail });
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
     res.status(500).json({ message: err.message });
   }
 };
@@ -852,7 +947,21 @@ const getAnalytics = async (req, res) => {
       revenue: revenueByMonthMap[key]?.revenue || 0,
     }));
 
-    res.json({ total, active, trial, expired, suspended, totalRevenue, featureUsage, revenueByMonth, growth });
+    const notificationFeed = await SuperAdminNotification.find({})
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    const recentActivity = notificationFeed.map((n) => ({
+      id: String(n._id),
+      type: n.type,
+      user: n.restaurantName || n.restaurantId || "System",
+      action: n.title || n.message,
+      createdAt: n.createdAt,
+      restaurantId: n.restaurantId || "",
+    }));
+
+    res.json({ total, active, trial, expired, suspended, totalRevenue, featureUsage, revenueByMonth, growth, recentActivity });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
