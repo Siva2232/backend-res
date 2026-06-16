@@ -101,10 +101,7 @@ async function tryDeliverJob(job, req) {
   if (!io || !socketId) return false;
 
   emitPrintJob(io, socketId, job);
-  job.status = "delivered";
-  job.deliveredAt = new Date();
-  job.connectorSocketId = socketId;
-  await job.save();
+  // Stay "queued" until connector acks — avoids jobs stuck as delivered when socket drops.
   return true;
 }
 
@@ -189,7 +186,7 @@ async function createPrintJob(req, res) {
       jobId: job._id,
       status: job.status,
       queued: job.status === "queued",
-      delivered: delivered || job.status === "delivered",
+      delivered: delivered,
       connectorsOnline: getConnectorCount(restaurantId) + jwtOnline,
     });
   } catch (error) {
@@ -216,27 +213,9 @@ async function listPendingPrintJobs(req, res) {
       .limit(limit)
       .lean();
 
-    const claimed = [];
-
-    for (const row of jobs) {
-      const job = await PrintJob.findOneAndUpdate(
-        { _id: row._id, status: "queued" },
-        {
-          $set: {
-            status: "delivered",
-            deliveredAt: new Date(),
-            connectorSocketId: req.connector?.connectorId || "pending-poll",
-          },
-        },
-        { new: true }
-      );
-      if (!job) continue;
-      claimed.push(formatJobPayload(job));
-    }
-
     res.json({
-      jobs: claimed,
-      count: claimed.length,
+      jobs: jobs.map((row) => formatJobPayload(row)),
+      count: jobs.length,
       connectorsOnline: getConnectorCount(restaurantId),
     });
   } catch (error) {
