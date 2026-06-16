@@ -25,6 +25,8 @@ const printJobSchema = new mongoose.Schema(
     printerHost: { type: String, default: "" },
     printerPort: { type: Number, default: 9100 },
     text: { type: String, default: "" },
+    /** When "base64", `text` holds ESC/POS bytes from the web app (exact print layout). */
+    textEncoding: { type: String, default: "" },
 
     status: {
       type: String,

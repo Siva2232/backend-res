@@ -30,6 +30,15 @@ function formatJobPayload(job) {
     type: job.type || job.printerTarget,
   };
 
+  if (job.text && String(job.textEncoding || "").toLowerCase() === "base64") {
+    return {
+      ...base,
+      text: job.text,
+      textEncoding: "base64",
+      payload: job.payload && typeof job.payload === "object" ? job.payload : undefined,
+    };
+  }
+
   if (job.payload && typeof job.payload === "object") {
     return { ...base, payload: job.payload };
   }
@@ -118,7 +127,8 @@ async function createPrintJob(req, res) {
     }
 
     const body = req.body || {};
-    const { printerTarget, printerHost, printerPort, text, type, printerType, payload } = body;
+    const { printerTarget, printerHost, printerPort, text, type, printerType, payload, textEncoding } =
+      body;
 
     const resolvedType = type || (printerTarget === "kitchen" ? "kot" : printerTarget) || "custom";
     const resolvedPrinterType = resolvePrinterType(body);
@@ -127,6 +137,8 @@ async function createPrintJob(req, res) {
     let port = Number(printerPort) || 9100;
     let jobText = text ? String(text) : "";
     let jobPayload = payload;
+    const jobTextEncoding =
+      String(textEncoding || "").toLowerCase() === "base64" ? "base64" : "";
 
     if (jobPayload && typeof jobPayload === "object") {
       if (!host) {
@@ -161,6 +173,7 @@ async function createPrintJob(req, res) {
       printerHost: host,
       printerPort: port,
       text: jobText,
+      textEncoding: jobTextEncoding,
       status: "queued",
     });
 
